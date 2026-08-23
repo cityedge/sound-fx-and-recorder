@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sound FX & Recorder - Settings / 設定</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <div>
+        <p class="eyebrow">SOUND FX & RECORDER</p>
+        <h1>Settings <span>/ 設定</span></h1>
+      </div>
+      <div class="format-badge">DSP + WAV · 16-bit PCM</div>
+    </header>
+
+    <section class="card">
+      <h2>FX <span>/ エフェクト</span></h2>
+      <p class="lead">Choose how the gadget starts when POWER is turned on.<br>POWERをONにしたときのエフェクト初期状態を設定します。</p>
+
+      <div class="setting-block">
+        <div class="setting-label">
+          <strong>Startup effect level</strong>
+          <small>起動時のエフェクト量</small>
+        </div>
+        <div class="range-row">
+          <input id="startupEffectLevel" type="range" min="0" max="100" step="1" value="50">
+          <output id="startupEffectReadout">50</output>
+        </div>
+      </div>
+
+      <label class="check-row">
+        <input id="rememberModeLevels" type="checkbox">
+        <span>
+          <strong>Remember level for each mode</strong>
+          <small>モードごとのエフェクト量を記憶</small>
+        </span>
+      </label>
+
+      <label class="select-row">
+        <span>
+          <strong>Startup mode</strong>
+          <small>起動時のモード</small>
+        </span>
+        <select id="startupMode">
+          <option value="last">Last used / 前回のモード</option>
+          <option value="wide">WIDE</option>
+          <option value="surround">SURROUND</option>
+          <option value="room">ROOM</option>
+          <option value="hall">HALL</option>
+          <option value="bypass">BYPASS</option>
+        </select>
+      </label>
+
+      <p class="note">With <strong>Last used</strong>, BYPASS is remembered too. If POWER starts in BYPASS, turning BYPASS off goes to WIDE. When per-mode memory is disabled, every mode starts at the Startup effect level.<br><strong>前回のモード</strong>ではBYPASSも記憶します。BYPASSで起動した場合、BYPASSを解除するとWIDEになります。モード別記憶をOFFにすると、各モードは「起動時のエフェクト量」から開始します。</p>
+    </section>
+
+    <section class="card">
+      <h2>Download name <span>/ ダウンロード名</span></h2>
+      <p class="lead">Choose the parts used for the saved WAV filename.<br>保存するWAVファイル名に使う要素を選択します。</p>
+
+      <label class="check-row">
+        <input id="useTabTitle" type="checkbox">
+        <span><strong>Tab title</strong><small>タブ名</small></span>
+      </label>
+      <label class="check-row">
+        <input id="useTimestamp" type="checkbox">
+        <span><strong>Timestamp</strong><small>タイムスタンプ</small></span>
+      </label>
+
+      <div class="preview">
+        <span>Example / 保存例</span>
+        <code id="filenamePreview">[Tab title here].wav</code>
+      </div>
+      <p class="note">Duplicate filenames are automatically uniquified, for example <code>file (1).wav</code>.<br>同名ファイルがある場合は <code>file (1).wav</code> のように自動で重複を回避します。</p>
+    </section>
+
+    <section class="card">
+      <h2>Recording <span>/ 録音</span></h2>
+
+      <label class="check-row">
+        <input id="autoTrim" type="checkbox">
+        <span><strong>Auto trim silence</strong><small>無音部自動トリム</small></span>
+      </label>
+      <label class="check-row">
+        <input id="autoStop10Min" type="checkbox">
+        <span><strong>Auto stop after 10 minutes</strong><small>10分で自動停止</small></span>
+      </label>
+
+      <p class="note">Recording captures the current output, including WIDE / SURROUND / ROOM / HALL, or the clean tab audio while BYPASS is active. Silence detection runs after the selected signal path, so reverb tails are preserved when they remain above the threshold.<br>録音は現在の出力をそのまま保存します。WIDE / SURROUND / ROOM / HALLの加工音だけでなく、BYPASS時は原音のまま録音できます。無音判定も現在の出力に対して行うため、残響がしきい値を上回る間はリバーブテールも保存されます。</p>
+    </section>
+
+    <footer class="footer">
+      <span>● Changes are saved automatically. / 変更は自動保存されます。</span>
+      <span id="saveStatus" role="status" aria-live="polite"></span>
+    </footer>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>

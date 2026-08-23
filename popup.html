@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sound FX & Recorder</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="gadget">
+    <header class="topbar">
+      <div>
+        <p class="brand">SOUND FX & RECORDER</p>
+        <p class="subbrand">RETRO DSP + TAB RECORDER / 音響FX＆録音</p>
+      </div>
+      <button id="powerButton" class="power" type="button" aria-pressed="false">
+        <span class="powerLed"></span>
+        <span>POWER</span>
+      </button>
+    </header>
+
+    <section class="display" aria-live="polite">
+      <div class="displayMain">
+        <span id="displayMode">OFF</span>
+        <span id="displayValue">--</span>
+      </div>
+      <div class="displaySub">
+        <span id="tabName">No active FX / FX停止中</span>
+        <span id="recordTime">00:00</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="labelRow">
+        <span>MODE / モード</span>
+        <span>DSP</span>
+      </div>
+      <div class="modeGrid" role="group" aria-label="Effect mode">
+        <button class="modeButton" data-mode="wide" type="button">WIDE<small>ワイド</small></button>
+        <button class="modeButton" data-mode="surround" type="button">SURROUND<small>サラウンド</small></button>
+        <button class="modeButton" data-mode="room" type="button">ROOM<small>ルーム</small></button>
+        <button class="modeButton" data-mode="hall" type="button">HALL<small>ホール</small></button>
+      </div>
+    </section>
+
+    <section class="panel effectPanel">
+      <div class="labelRow">
+        <label for="effectSlider">EFFECT / 効果</label>
+        <output id="effectReadout" for="effectSlider">50</output>
+      </div>
+      <input id="effectSlider" type="range" min="0" max="100" step="1" value="50">
+      <div class="ticks" aria-hidden="true"><span>0</span><span>50</span><span>100</span></div>
+    </section>
+
+    <section class="transport">
+      <button id="bypassButton" class="utilityButton" type="button" aria-pressed="false">
+        BYPASS<small>原音</small>
+      </button>
+      <button id="resetButton" class="utilityButton" type="button">
+        RESET<small>初期化</small>
+      </button>
+      <button id="recordButton" class="recordButton" type="button" disabled>
+        <span class="recordDot"></span>
+        <span id="recordLabel">REC</span>
+      </button>
+    </section>
+
+    <footer class="footer">
+      <span id="statusText">Open a music tab, then press POWER. / 音楽タブでPOWERを押してください。</span>
+      <button id="settingsButton" type="button">SETTINGS / 設定</button>
+    </footer>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

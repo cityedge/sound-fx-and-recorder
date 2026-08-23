@@ -1,0 +1,246 @@
+:root {
+  color-scheme: dark;
+  --bg: #0a0d0f;
+  --body: #171c1e;
+  --body2: #202729;
+  --edge: #3a4447;
+  --edge2: #101416;
+  --text: #e6e9e6;
+  --muted: #8d9996;
+  --display: #bdd7b5;
+  --display-dim: #6d806a;
+  --display-bg: #172019;
+  --active: #d7a33c;
+  --record: #d44b42;
+  --green: #77aa79;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  width: 370px;
+  min-height: 530px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", "Noto Sans JP", "Yu Gothic UI", Meiryo, sans-serif;
+}
+button, input { font: inherit; }
+button { color: inherit; }
+.gadget {
+  min-height: 530px;
+  padding: 15px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.035), transparent 22%),
+    var(--body);
+  border: 1px solid #080a0b;
+  box-shadow: inset 0 0 0 1px #30383a;
+}
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 4px 3px 12px;
+}
+.brand {
+  margin: 0;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: .09em;
+}
+.subbrand {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: .12em;
+}
+.power {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  background: linear-gradient(#293033, #181d1f);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 1px 2px #050607;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+.powerLed {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #39413f;
+  box-shadow: inset 0 0 2px #000;
+}
+.power[aria-pressed="true"] .powerLed {
+  background: var(--green);
+  box-shadow: 0 0 7px rgba(119,170,121,.7);
+}
+.display {
+  margin-bottom: 12px;
+  padding: 14px 14px 12px;
+  border: 1px solid #424c42;
+  border-radius: 3px;
+  background: var(--display-bg);
+  box-shadow: inset 0 0 16px rgba(0,0,0,.55), 0 1px 0 rgba(255,255,255,.03);
+  font-family: Consolas, "Courier New", monospace;
+  text-shadow: 0 0 5px rgba(189,215,181,.22);
+}
+.displayMain, .displaySub {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.displayMain { color: var(--display); }
+#displayMode { font-size: 20px; font-weight: 700; letter-spacing: .08em; }
+#displayValue { font-size: 15px; }
+.displaySub { margin-top: 9px; color: var(--display-dim); font-size: 10px; }
+#tabName {
+  overflow: hidden;
+  max-width: 245px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.panel {
+  margin-top: 10px;
+  padding: 11px;
+  border: 1px solid var(--edge2);
+  border-radius: 5px;
+  background: var(--body2);
+  box-shadow: inset 0 0 0 1px #2c3436;
+}
+.labelRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 9px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .1em;
+}
+.modeGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+.modeButton, .utilityButton, .recordButton {
+  border: 1px solid #444e51;
+  border-radius: 4px;
+  background: linear-gradient(#2b3336, #181e20);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 1px 2px rgba(0,0,0,.5);
+  cursor: pointer;
+}
+.modeButton {
+  min-height: 48px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .06em;
+}
+.modeButton small, .utilityButton small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-family: "Segoe UI", "Noto Sans JP", sans-serif;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.modeButton.active {
+  border-color: #8a6a2e;
+  background: linear-gradient(#443922, #241e15);
+  color: #f1c96c;
+  box-shadow: inset 0 0 11px rgba(215,163,60,.10), 0 0 4px rgba(215,163,60,.17);
+}
+.effectPanel output {
+  min-width: 30px;
+  color: #f1c96c;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  text-align: right;
+}
+input[type="range"] {
+  width: 100%;
+  margin: 4px 0 0;
+  accent-color: var(--active);
+}
+.ticks {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 3px;
+  color: #697371;
+  font-family: Consolas, monospace;
+  font-size: 8px;
+}
+.transport {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.2fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+.utilityButton, .recordButton { min-height: 51px; }
+.utilityButton {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .06em;
+}
+.utilityButton.active {
+  border-color: #746f56;
+  color: #ded49a;
+  background: linear-gradient(#3a392c, #211f19);
+}
+.recordButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: Consolas, monospace;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+.recordButton:disabled {
+  opacity: .38;
+  cursor: default;
+}
+.recordButton.recording {
+  border-color: #8f3d37;
+  background: linear-gradient(#4a2421, #281513);
+  color: #ffd4d0;
+}
+.recordDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--record);
+}
+.recordButton.recording .recordDot { box-shadow: 0 0 7px rgba(212,75,66,.8); }
+.footer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 10px;
+  min-height: 62px;
+  padding: 12px 3px 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+#settingsButton {
+  padding: 3px 0;
+  border: 0;
+  border-bottom: 1px solid #58615f;
+  background: transparent;
+  color: #aab4b1;
+  cursor: pointer;
+  font-size: 9px;
+}
+button:focus-visible, input:focus-visible {
+  outline: 2px solid #b88936;
+  outline-offset: 2px;
+}

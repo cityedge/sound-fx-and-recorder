@@ -1,0 +1,38 @@
+{
+  "name": "Sound FX & Recorder",
+  "description": "A retro-style DSP gadget and WAV recorder for Chrome tabs, with WIDE, SURROUND, ROOM, HALL and clean BYPASS modes.",
+  "version": "1.0.0",
+  "manifest_version": 3,
+  "minimum_chrome_version": "116",
+  "action": {
+    "default_title": "Sound FX & Recorder / 音響FX＆録音",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "permissions": [
+    "tabCapture",
+    "offscreen",
+    "activeTab",
+    "storage",
+    "downloads"
+  ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "short_name": "Sound FX",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
