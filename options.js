@@ -93,7 +93,7 @@ function normalizeAmount(value) {
 }
 
 function normalizeStartupMode(value) {
-  return ['last', 'wide', 'surround', 'room', 'hall', 'bypass'].includes(value)
+  return ['last', 'normal', 'wide', 'surround', 'room', 'hall', 'bypass'].includes(value)
     ? value
     : DEFAULT_SETTINGS.startupMode;
 }

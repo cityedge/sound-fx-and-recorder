@@ -8,12 +8,15 @@ Chrome 116+ / Manifest V3. Manual installation only; this project is not distrib
 
 ## Features / 機能
 
+- **NORMAL** — no spatial/reverb FX; BASS and TREBLE remain available
 - **WIDE** — strong stereo widening
 - **SURROUND** — retro pseudo-surround using short asymmetric delays, all-pass phase shifts, and cross-channel phase components
 - **ROOM** — short, obvious room ambience
 - **HALL** — longer and deeper hall reverb
-- **BYPASS** — clean unity-gain path that also works as a plain tab-audio recorder
-- **EFFECT 0–100** — each DSP starts at 50% by default
+- **BASS 0–10** — global low-shelf boost, up to about +12 dB around 120 Hz
+- **TREBLE 0–10** — global high-shelf boost, up to about +12 dB around 6 kHz
+- **BYPASS** — clean unity-gain path that skips spatial FX, EQ, and limiter; also works as a plain tab-audio recorder
+- **EFFECT 0–100** — spatial/reverb DSP modes start at 50% by default
 - **WAV recording** — 16-bit stereo PCM, recorded after the selected signal path
 - **Live changes while recording** — mode, EFFECT, and BYPASS changes are captured in the WAV
 - Filename options using tab title and/or timestamp
@@ -37,8 +40,8 @@ There is no build step. The repository root itself is the unpacked Chrome extens
 
 1. Open a tab that is playing music, video, or other audio.
 2. Open **Sound FX & Recorder** and press **POWER**.
-3. Choose WIDE, SURROUND, ROOM, HALL, or BYPASS.
-4. Adjust **EFFECT** as desired.
+3. Choose NORMAL, WIDE, SURROUND, ROOM, HALL, or BYPASS.
+4. Adjust **EFFECT** for spatial/reverb modes and optionally add **BASS** / **TREBLE**.
 5. Press **REC** to record the current output to WAV.
 6. Press **STOP** to save the WAV. The FX session continues after recording stops.
 7. Press **POWER** again to stop processing the tab.
@@ -46,17 +49,28 @@ There is no build step. The repository root itself is the unpacked Chrome extens
 ## FX settings / エフェクト設定
 
 - **Startup effect level / 起動時のエフェクト量** — default 50%
-- **Remember level for each mode / モードごとのエフェクト量を記憶** — default ON
-- **Startup mode / 起動時のモード** — Last used, WIDE, SURROUND, ROOM, HALL, or BYPASS
+- **Remember EFFECT level for each mode / モードごとのEFFECT量を記憶** — default ON
+- **Startup mode / 起動時のモード** — Last used, NORMAL, WIDE, SURROUND, ROOM, HALL, or BYPASS
 
 `Last used` remembers BYPASS too. If a POWER session starts in BYPASS, turning BYPASS off switches to WIDE. During normal A/B comparison, for example HALL → BYPASS → BYPASS off, the extension returns to HALL.
+
+## Tone controls / トーンコントロール
+
+**BASS** and **TREBLE** are global 0–10 controls shared by every non-BYPASS mode. Their values are saved automatically and remain unchanged when switching modes. RESET returns both to 0.
+
+- BASS: 0 = flat, 10 ≈ +12 dB low-shelf around 120 Hz
+- TREBLE: 0 = flat, 10 ≈ +12 dB high-shelf around 6 kHz
+- BYPASS skips both tone controls as well as the spatial/reverb DSP and safety limiter.
+
+日本語: BASS/TREBLEは全モード共通の0～10段階です。モードを切り替えても値を保持し、RESETで0に戻ります。BYPASS時はEQを含むすべてのDSPを迂回します。
 
 ## Recording / 録音
 
 The recorder saves the audio that is currently being monitored:
 
-- In WIDE / SURROUND / ROOM / HALL, the processed output is recorded.
-- In BYPASS, the clean tab audio is recorded.
+- In NORMAL / WIDE / SURROUND / ROOM / HALL, the current BASS/TREBLE settings are included in the recording.
+- NORMAL provides EQ without spatial/reverb processing.
+- In BYPASS, the clean tab audio is recorded with all DSP bypassed.
 - Recording uses 16-bit stereo PCM WAV at the actual AudioContext sample rate.
 - Silence trimming analyzes the selected output path, so ROOM/HALL reverb tails remain when they are above the silence threshold.
 

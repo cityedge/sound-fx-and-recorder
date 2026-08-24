@@ -1,8 +1,10 @@
-const FX_MODES = Object.freeze(['wide', 'surround', 'room', 'hall']);
+const FX_MODES = Object.freeze(['normal', 'wide', 'surround', 'room', 'hall']);
 
 const DEFAULT_FX = Object.freeze({
   mode: 'wide',
   effectAmount: 50,
+  bassLevel: 0,
+  trebleLevel: 0,
   bypass: false
 });
 
@@ -11,7 +13,9 @@ const DEFAULT_FX_PREFERENCES = Object.freeze({
   rememberModeLevels: true,
   startupMode: 'last',
   lastUsedMode: 'wide',
-  effectLevels: {}
+  effectLevels: {},
+  bassLevel: 0,
+  trebleLevel: 0
 });
 
 const DEFAULT_RECORDING_SETTINGS = Object.freeze({
@@ -26,6 +30,11 @@ const ui = {
   modeButtons: [...document.querySelectorAll('.modeButton')],
   effectSlider: document.getElementById('effectSlider'),
   effectReadout: document.getElementById('effectReadout'),
+  bassSlider: document.getElementById('bassSlider'),
+  bassReadout: document.getElementById('bassReadout'),
+  trebleSlider: document.getElementById('trebleSlider'),
+  trebleReadout: document.getElementById('trebleReadout'),
+  toneCell: document.querySelector('.toneCell'),
   bypassButton: document.getElementById('bypassButton'),
   resetButton: document.getElementById('resetButton'),
   recordButton: document.getElementById('recordButton'),
@@ -58,6 +67,8 @@ async function init() {
   engineState.mode = previewFx.mode;
   engineState.effectAmount = previewFx.effectAmount;
   engineState.bypass = previewFx.bypass;
+  engineState.bassLevel = previewFx.bassLevel;
+  engineState.trebleLevel = previewFx.trebleLevel;
 
   bindUi();
   await refreshState();
@@ -102,6 +113,8 @@ function bindUi() {
           type: 'set-fx-settings',
           mode,
           effectAmount: amount,
+          bassLevel: engineState.bassLevel,
+          trebleLevel: engineState.trebleLevel,
           bypass: false
         });
       }
@@ -124,6 +137,21 @@ function bindUi() {
     }, 35);
   });
 
+  const bindToneSlider = (slider, readout, key, messageType) => {
+    slider.addEventListener('input', () => {
+      const level = normalizeToneLevel(slider.value);
+      engineState[key] = level;
+      readout.value = String(level);
+      void chrome.storage.local.set({ [key]: level });
+      if (engineState.active) {
+        void sendOffscreen({ type: messageType, level });
+      }
+    });
+  };
+
+  bindToneSlider(ui.bassSlider, ui.bassReadout, 'bassLevel', 'set-bass-level');
+  bindToneSlider(ui.trebleSlider, ui.trebleReadout, 'trebleLevel', 'set-treble-level');
+
   ui.bypassButton.addEventListener('click', async () => {
     const nextBypass = !engineState.bypass;
     engineState.bypass = nextBypass;
@@ -145,9 +173,15 @@ function bindUi() {
     engineState.mode = DEFAULT_FX.mode;
     engineState.effectAmount = DEFAULT_FX.effectAmount;
     engineState.bypass = DEFAULT_FX.bypass;
+    engineState.bassLevel = DEFAULT_FX.bassLevel;
+    engineState.trebleLevel = DEFAULT_FX.trebleLevel;
 
     const preferences = await loadFxPreferences();
-    const updates = { lastUsedMode: DEFAULT_FX.mode };
+    const updates = {
+      lastUsedMode: DEFAULT_FX.mode,
+      bassLevel: DEFAULT_FX.bassLevel,
+      trebleLevel: DEFAULT_FX.trebleLevel
+    };
     if (preferences.rememberModeLevels) {
       updates.effectLevels = {
         ...preferences.effectLevels,
@@ -213,6 +247,8 @@ async function startFx() {
   engineState.mode = startupFx.mode;
   engineState.effectAmount = startupFx.effectAmount;
   engineState.bypass = startupFx.bypass;
+  engineState.bassLevel = startupFx.bassLevel;
+  engineState.trebleLevel = startupFx.trebleLevel;
 
   await chrome.storage.local.set({
     lastUsedMode: startupFx.bypass ? 'bypass' : startupFx.mode
@@ -268,6 +304,8 @@ async function refreshState() {
         engineState.mode = normalizeMode(state.mode ?? engineState.mode);
         engineState.effectAmount = normalizeAmount(state.effectAmount ?? engineState.effectAmount);
         engineState.bypass = state.bypass === true;
+        engineState.bassLevel = normalizeToneLevel(state.bassLevel ?? engineState.bassLevel);
+        engineState.trebleLevel = normalizeToneLevel(state.trebleLevel ?? engineState.trebleLevel);
       }
     }
     render();
@@ -298,7 +336,9 @@ async function loadFxPreferences() {
     rememberModeLevels: raw.rememberModeLevels !== false,
     startupMode: normalizeStartupMode(raw.startupMode),
     lastUsedMode: normalizePublicMode(raw.lastUsedMode),
-    effectLevels: normalizedLevels
+    effectLevels: normalizedLevels,
+    bassLevel: normalizeToneLevel(raw.bassLevel),
+    trebleLevel: normalizeToneLevel(raw.trebleLevel)
   };
 }
 
@@ -313,6 +353,8 @@ function resolveStartupFx(preferences) {
     return {
       mode: 'wide',
       effectAmount: getModeAmount('wide', preferences),
+      bassLevel: preferences.bassLevel,
+      trebleLevel: preferences.trebleLevel,
       bypass: true
     };
   }
@@ -321,6 +363,8 @@ function resolveStartupFx(preferences) {
   return {
     mode,
     effectAmount: getModeAmount(mode, preferences),
+    bassLevel: preferences.bassLevel,
+    trebleLevel: preferences.trebleLevel,
     bypass: false
   };
 }
@@ -356,8 +400,21 @@ function render() {
   }
 
   ui.effectSlider.value = String(engineState.effectAmount);
-  ui.effectSlider.disabled = busy;
   ui.effectReadout.value = String(engineState.effectAmount);
+  const effectRelevant = engineState.mode !== 'normal';
+  ui.effectSlider.disabled = busy || !effectRelevant;
+  ui.effectSlider.closest('.effectPanel')?.classList.toggle('disabled', !effectRelevant);
+
+  ui.bassSlider.value = String(engineState.bassLevel);
+  ui.bassReadout.value = String(engineState.bassLevel);
+  ui.trebleSlider.value = String(engineState.trebleLevel);
+  ui.trebleReadout.value = String(engineState.trebleLevel);
+  ui.bassSlider.disabled = busy;
+  ui.trebleSlider.disabled = busy;
+
+  const eqConfigured = engineState.bassLevel > 0 || engineState.trebleLevel > 0;
+  ui.toneCell.classList.toggle('active', eqConfigured);
+
   ui.bypassButton.classList.toggle('active', engineState.bypass);
   ui.bypassButton.setAttribute('aria-pressed', String(engineState.bypass));
   ui.bypassButton.disabled = busy;
@@ -394,12 +451,15 @@ function renderDisplay() {
     ui.displayValue.textContent = '--';
     ui.tabName.textContent = 'No active FX / FX停止中';
   } else {
+    const eqActive = !engineState.bypass && (engineState.bassLevel > 0 || engineState.trebleLevel > 0);
     ui.displayMode.textContent = engineState.bypass
       ? 'BYPASS'
-      : engineState.mode.toUpperCase();
+      : `${engineState.mode.toUpperCase()}${eqActive ? ' +EQ' : ''}`;
     ui.displayValue.textContent = engineState.bypass
       ? 'DRY'
-      : `FX ${engineState.effectAmount}`;
+      : engineState.mode === 'normal'
+        ? `B${engineState.bassLevel} T${engineState.trebleLevel}`
+        : `FX ${engineState.effectAmount}`;
     ui.tabName.textContent = engineState.tabTitle || 'Current tab / 現在のタブ';
   }
   ui.recordTime.textContent = formatTime(engineState.savedSeconds || 0);
@@ -436,6 +496,12 @@ function normalizeAmount(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return DEFAULT_FX.effectAmount;
   return Math.max(0, Math.min(100, Math.round(number)));
+}
+
+function normalizeToneLevel(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.max(0, Math.min(10, Math.round(number)));
 }
 
 function normalizeRecordingSettings(settings) {

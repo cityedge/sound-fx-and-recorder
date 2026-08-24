@@ -35,11 +35,24 @@
         <span>MODE / モード</span>
         <span>DSP</span>
       </div>
-      <div class="modeGrid" role="group" aria-label="Effect mode">
+      <div class="modeGrid" role="group" aria-label="Effect mode and tone controls">
+        <button class="modeButton" data-mode="normal" type="button">NORMAL<small>ノーマル</small></button>
         <button class="modeButton" data-mode="wide" type="button">WIDE<small>ワイド</small></button>
         <button class="modeButton" data-mode="surround" type="button">SURROUND<small>サラウンド</small></button>
         <button class="modeButton" data-mode="room" type="button">ROOM<small>ルーム</small></button>
         <button class="modeButton" data-mode="hall" type="button">HALL<small>ホール</small></button>
+        <div class="toneCell" aria-label="Tone boost controls">
+          <label class="toneRow" for="bassSlider" title="Bass boost / 低音ブースト">
+            <span class="toneAbbr" aria-hidden="true">B</span>
+            <input id="bassSlider" aria-label="Bass boost / 低音ブースト" type="range" min="0" max="10" step="1" value="0">
+            <output id="bassReadout" for="bassSlider">0</output>
+          </label>
+          <label class="toneRow" for="trebleSlider" title="Treble boost / 高音ブースト">
+            <span class="toneAbbr" aria-hidden="true">T</span>
+            <input id="trebleSlider" aria-label="Treble boost / 高音ブースト" type="range" min="0" max="10" step="1" value="0">
+            <output id="trebleReadout" for="trebleSlider">0</output>
+          </label>
+        </div>
       </div>
     </section>
 

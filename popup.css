@@ -126,7 +126,7 @@ button { color: inherit; }
 }
 .modeGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 7px;
 }
 .modeButton, .utilityButton, .recordButton {
@@ -137,7 +137,7 @@ button { color: inherit; }
   cursor: pointer;
 }
 .modeButton {
-  min-height: 48px;
+  min-height: 58px;
   font-family: Consolas, "Courier New", monospace;
   font-size: 12px;
   font-weight: 800;
@@ -158,6 +158,53 @@ button { color: inherit; }
   color: #f1c96c;
   box-shadow: inset 0 0 11px rgba(215,163,60,.10), 0 0 4px rgba(215,163,60,.17);
 }
+
+.toneCell {
+  min-height: 58px;
+  padding: 5px 5px 4px;
+  border: 1px solid #3d474a;
+  border-radius: 4px;
+  background: linear-gradient(#20272a, #151a1c);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
+}
+.toneCell.active {
+  border-color: #8a6a2e;
+  background: linear-gradient(#443922, #241e15);
+  box-shadow: inset 0 0 11px rgba(215,163,60,.10), 0 0 4px rgba(215,163,60,.17);
+}
+.toneCell.active .toneAbbr,
+.toneCell.active output {
+  color: #f1c96c;
+}
+.toneRow {
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 3px;
+  min-height: 23px;
+  color: #c7cdca;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+.toneAbbr {
+  color: #c7cdca;
+  font-size: 9px;
+  text-align: center;
+}
+.toneRow input[type="range"] {
+  min-width: 0;
+  height: 14px;
+  margin: 0;
+}
+.toneRow output {
+  color: #f1c96c;
+  font-size: 9px;
+  text-align: right;
+}
+.toneCell.disabled { opacity: .48; }
+.effectPanel.disabled { opacity: .58; }
 .effectPanel output {
   min-width: 30px;
   color: #f1c96c;

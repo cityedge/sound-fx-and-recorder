@@ -34,8 +34,8 @@
       <label class="check-row">
         <input id="rememberModeLevels" type="checkbox">
         <span>
-          <strong>Remember level for each mode</strong>
-          <small>モードごとのエフェクト量を記憶</small>
+          <strong>Remember EFFECT level for each mode</strong>
+          <small>モードごとのEFFECT量を記憶</small>
         </span>
       </label>
 
@@ -46,6 +46,7 @@
         </span>
         <select id="startupMode">
           <option value="last">Last used / 前回のモード</option>
+          <option value="normal">NORMAL</option>
           <option value="wide">WIDE</option>
           <option value="surround">SURROUND</option>
           <option value="room">ROOM</option>
@@ -89,7 +90,7 @@
         <span><strong>Auto stop after 10 minutes</strong><small>10分で自動停止</small></span>
       </label>
 
-      <p class="note">Recording captures the current output, including WIDE / SURROUND / ROOM / HALL, or the clean tab audio while BYPASS is active. Silence detection runs after the selected signal path, so reverb tails are preserved when they remain above the threshold.<br>録音は現在の出力をそのまま保存します。WIDE / SURROUND / ROOM / HALLの加工音だけでなく、BYPASS時は原音のまま録音できます。無音判定も現在の出力に対して行うため、残響がしきい値を上回る間はリバーブテールも保存されます。</p>
+      <p class="note">Recording captures the current output, including NORMAL / WIDE / SURROUND / ROOM / HALL with the current BASS/TREBLE settings, or the clean tab audio while BYPASS is active. Silence detection runs after the selected signal path, so reverb tails are preserved when they remain above the threshold.<br>録音は現在の出力をそのまま保存します。NORMAL / WIDE / SURROUND / ROOM / HALLとBASS/TREBLEを含む現在の加工音だけでなく、BYPASS時は原音のまま録音できます。無音判定も現在の出力に対して行うため、残響がしきい値を上回る間はリバーブテールも保存されます。</p>
     </section>
 
     <footer class="footer">

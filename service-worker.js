@@ -29,6 +29,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const storedFx = await chrome.storage.local.get({
             mode: 'wide',
             effectAmount: 50,
+            bassLevel: 0,
+            trebleLevel: 0,
             bypass: false
           });
           sendResponse({
@@ -162,7 +164,7 @@ async function updateActionForState(state) {
 }
 
 function defaultEngineState(fx = {}) {
-  const mode = ['wide', 'surround', 'room', 'hall'].includes(fx.mode)
+  const mode = ['normal', 'wide', 'surround', 'room', 'hall'].includes(fx.mode)
     ? fx.mode
     : 'wide';
   const rawAmount = Number(fx.effectAmount);
@@ -175,10 +177,18 @@ function defaultEngineState(fx = {}) {
     recordingStatus: 'idle',
     mode,
     effectAmount,
+    bassLevel: normalizeToneLevel(fx.bassLevel),
+    trebleLevel: normalizeToneLevel(fx.trebleLevel),
     bypass: fx.bypass === true,
     savedSeconds: 0,
     tabTitle: ''
   };
+}
+
+function normalizeToneLevel(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.max(0, Math.min(10, Math.round(number)));
 }
 
 function formatBadge(totalSeconds) {

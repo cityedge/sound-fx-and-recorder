@@ -26,6 +26,8 @@ const EFFECT_MAX_GAIN = Object.freeze({
 const DEFAULT_FX = Object.freeze({
   mode: 'wide',
   effectAmount: 50,
+  bassLevel: 0,
+  trebleLevel: 0,
   bypass: false
 });
 
@@ -44,6 +46,8 @@ let audioContext = null;
 let sourceNode = null;
 let mixBus = null;
 let dryGain = null;
+let bassFilterNode = null;
+let trebleFilterNode = null;
 let limiterNode = null;
 let processedGain = null;
 let bypassGain = null;
@@ -95,6 +99,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           break;
         case 'set-effect-amount':
           setEffectAmount(message.effectAmount);
+          result = { ok: true, state: getPublicState() };
+          break;
+        case 'set-bass-level':
+          setBassLevel(message.level);
+          result = { ok: true, state: getPublicState() };
+          break;
+        case 'set-treble-level':
+          setTrebleLevel(message.level);
           result = { ok: true, state: getPublicState() };
           break;
         case 'set-bypass':
@@ -227,13 +239,29 @@ function buildFxGraph() {
     effectGains.set(mode, gain);
   }
 
+  // Global tone boosts are independent from the spatial/reverb mode.
+  // NORMAL leaves all effectGains at zero and runs clean audio through
+  // these optional shelves. BYPASS skips the entire processed path.
+  bassFilterNode = trackNode(audioContext.createBiquadFilter());
+  bassFilterNode.type = 'lowshelf';
+  bassFilterNode.frequency.value = 120;
+  bassFilterNode.gain.value = 0;
+
+  trebleFilterNode = trackNode(audioContext.createBiquadFilter());
+  trebleFilterNode.type = 'highshelf';
+  trebleFilterNode.frequency.value = 6000;
+  trebleFilterNode.gain.value = 0;
+
   limiterNode = trackNode(audioContext.createDynamicsCompressor());
   limiterNode.threshold.value = -0.8;
   limiterNode.knee.value = 0.5;
   limiterNode.ratio.value = 16;
   limiterNode.attack.value = 0.002;
   limiterNode.release.value = 0.10;
-  mixBus.connect(limiterNode);
+
+  mixBus.connect(bassFilterNode);
+  bassFilterNode.connect(trebleFilterNode);
+  trebleFilterNode.connect(limiterNode);
 
   // Keep BYPASS genuinely transparent: the clean tab signal skips the
   // limiter/effect path entirely. processedGain and bypassGain are
@@ -466,6 +494,18 @@ function setEffectAmount(value) {
   notifyStateChanged();
 }
 
+function setBassLevel(value) {
+  fxSettings.bassLevel = normalizeToneLevel(value);
+  if (sessionActive) applyMixGains(false);
+  notifyStateChanged();
+}
+
+function setTrebleLevel(value) {
+  fxSettings.trebleLevel = normalizeToneLevel(value);
+  if (sessionActive) applyMixGains(false);
+  notifyStateChanged();
+}
+
 function setBypass(value) {
   fxSettings.bypass = value === true;
   if (sessionActive) applyMixGains(false);
@@ -495,7 +535,16 @@ function applyMixGains(immediate) {
     setAudioParam(gain.gain, target, now, immediate);
   }
 
-  // BYPASS remains a true A/B path and skips the limiter/effect graph.
+  // Tone boosts are simple gadget-style shelves. BASS 0-10 maps to
+  // BASS 0-10 maps to 0..+12 dB at 120 Hz; TREBLE 0-10 maps to 0..+12 dB at 6 kHz.
+  if (bassFilterNode) {
+    setAudioParam(bassFilterNode.gain, fxSettings.bassLevel * 1.2, now, immediate);
+  }
+  if (trebleFilterNode) {
+    setAudioParam(trebleFilterNode.gain, fxSettings.trebleLevel * 1.2, now, immediate);
+  }
+
+  // BYPASS remains a true A/B path and skips EQ, limiter, and effect graph.
   const processed = fxSettings.bypass ? 0 : 1;
   const clean = 1 - processed;
   setAudioParam(processedGain.gain, processed, now, immediate);
@@ -822,6 +871,8 @@ async function cleanupAudio() {
   sourceNode = null;
   mixBus = null;
   dryGain = null;
+  bassFilterNode = null;
+  trebleFilterNode = null;
   limiterNode = null;
   processedGain = null;
   bypassGain = null;
@@ -847,6 +898,8 @@ function getPublicState() {
     recordingStatus,
     mode: fxSettings.mode,
     effectAmount: fxSettings.effectAmount,
+    bassLevel: fxSettings.bassLevel,
+    trebleLevel: fxSettings.trebleLevel,
     bypass: fxSettings.bypass,
     savedSeconds: displayedSavedSeconds,
     tabTitle: sessionTabTitle,
@@ -923,12 +976,14 @@ function normalizeFxSettings(settings) {
   return {
     mode: normalizeMode(settings?.mode),
     effectAmount: normalizeAmount(settings?.effectAmount),
+    bassLevel: normalizeToneLevel(settings?.bassLevel),
+    trebleLevel: normalizeToneLevel(settings?.trebleLevel),
     bypass: settings?.bypass === true
   };
 }
 
 function normalizeMode(value) {
-  return ['wide', 'surround', 'room', 'hall'].includes(value)
+  return ['normal', 'wide', 'surround', 'room', 'hall'].includes(value)
     ? value
     : DEFAULT_FX.mode;
 }
@@ -937,6 +992,12 @@ function normalizeAmount(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return DEFAULT_FX.effectAmount;
   return Math.max(0, Math.min(100, Math.round(number)));
+}
+
+function normalizeToneLevel(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.max(0, Math.min(10, Math.round(number)));
 }
 
 function normalizeRecordingSettings(settings) {
