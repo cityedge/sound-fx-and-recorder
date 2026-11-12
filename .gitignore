@@ -1,0 +1,24 @@
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs and local artifacts
+*.log
+*.zip
+*.crx
+*.pem
+
+# Temporary folders
+.tmp/
+tmp/
+dist/
+output/
+build/
+tests/tmp/

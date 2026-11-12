@@ -78,3 +78,6 @@ h1 span, h2 span { color: var(--muted); font-weight: 500; }
   .select-row { align-items: stretch; flex-direction: column; }
   .select-row select { width: 100%; min-width: 0; }
 }
+
+.check-row.unavailable { opacity: .52; cursor: default; }
+.check-row.unavailable:hover { border-color: transparent; }

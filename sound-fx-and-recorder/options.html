@@ -13,7 +13,7 @@
         <p class="eyebrow">SOUND FX & RECORDER</p>
         <h1>Settings <span>/ 設定</span></h1>
       </div>
-      <div class="format-badge">DSP + WAV · 16-bit PCM</div>
+      <div class="format-badge">DSP + WAV / WebM·Opus</div>
     </header>
 
     <section class="card">
@@ -60,7 +60,7 @@
 
     <section class="card">
       <h2>Download name <span>/ ダウンロード名</span></h2>
-      <p class="lead">Choose the parts used for the saved WAV filename.<br>保存するWAVファイル名に使う要素を選択します。</p>
+      <p class="lead">Choose the parts used for the recording filename.<br>録音ファイル名に使う要素を選択します。</p>
 
       <label class="check-row">
         <input id="useTabTitle" type="checkbox">
@@ -75,22 +75,31 @@
         <span>Example / 保存例</span>
         <code id="filenamePreview">[Tab title here].wav</code>
       </div>
-      <p class="note">Duplicate filenames are automatically uniquified, for example <code>file (1).wav</code>.<br>同名ファイルがある場合は <code>file (1).wav</code> のように自動で重複を回避します。</p>
+      <p class="note">Duplicate names are automatically uniquified, e.g. <code>file (1).wav</code> or <code>file (1).webm</code>.<br>同名ファイルは自動で重複を回避します。</p>
     </section>
 
     <section class="card">
       <h2>Recording <span>/ 録音</span></h2>
-
-      <label class="check-row">
+      <p class="lead">Select a format for the next recording. Playback remains stereo in all modes.<br>次回の録音形式を選択します。再生音声はどの形式でもステレオのままです。</p>
+      <label class="select-row">
+        <span><strong>Recording format</strong><small>録音形式</small></span>
+        <select id="recordingFormat">
+          <option value="wav">WAV · 16-bit stereo PCM</option>
+          <option value="opus-stereo">Opus Stereo · 128 kbps · WebM</option>
+          <option value="opus-mono">Opus Mono · 64 kbps · WebM</option>
+        </select>
+      </label>
+      <p class="note" id="formatDescription" aria-live="polite"></p>
+      <label class="check-row" id="autoTrimRow">
         <input id="autoTrim" type="checkbox">
-        <span><strong>Auto trim silence</strong><small>無音部自動トリム</small></span>
+        <span><strong>Auto trim silence (WAV only)</strong><small>無音部自動トリム（WAVのみ）</small></span>
       </label>
-      <label class="check-row">
+      <label class="check-row" id="autoStopRow">
         <input id="autoStop10Min" type="checkbox">
-        <span><strong>Auto stop after 10 minutes</strong><small>10分で自動停止</small></span>
+        <span><strong>Auto stop after 10 minutes (WAV only)</strong><small>10分で自動停止（WAVのみ）</small></span>
       </label>
-
-      <p class="note">Recording captures the current output, including NORMAL / WIDE / SURROUND / ROOM / HALL with the current BASS/TREBLE settings, or the clean tab audio while BYPASS is active. Silence detection runs after the selected signal path, so reverb tails are preserved when they remain above the threshold.<br>録音は現在の出力をそのまま保存します。NORMAL / WIDE / SURROUND / ROOM / HALLとBASS/TREBLEを含む現在の加工音だけでなく、BYPASS時は原音のまま録音できます。無音判定も現在の出力に対して行うため、残響がしきい値を上回る間はリバーブテールも保存されます。</p>
+      <p class="note">The 10-minute limit is optional for WAV and is never used for Opus. Opus uses on-disk temporary chunks to keep RAM usage low; the temporary file is removed after Chrome finishes downloading. WAV still accumulates PCM in memory, so long WAV recordings can use substantial RAM.<br>10分自動停止はWAVのみの任意設定で、Opusには適用されません。Opusは圧縮データを一時ディスクへ逐次書き込み、ダウンロード完了後に削除します。WAVは従来どおりPCMをメモリに蓄積します。</p>
+      <p class="note">REC always records the currently audible signal. BYPASS is never switched automatically. With BYPASS on, the original tab audio is recorded; otherwise the current FX/EQ is included.<br>RECは常に現在の出力音を録音します。BYPASSは自動で切り替えません。BYPASS中は原音、それ以外はFX/EQ適用後の音を保存します。</p>
     </section>
 
     <footer class="footer">

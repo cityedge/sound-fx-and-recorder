@@ -9,9 +9,10 @@ The extension uses Chrome APIs for the following local functions:
 - tab audio capture
 - offscreen Web Audio processing
 - local preference storage
-- WAV file downloads
+- WAV and WebM/Opus downloads
+- Temporary disk-backed Opus chunks in Chrome’s origin-private file system (OPFS)
 
-Recorded WAV files are saved through Chrome's normal Downloads mechanism. Settings are stored in `chrome.storage.local`.
+Recordings are saved through Chrome’s normal Downloads mechanism. Opus recording temporarily stores encoded chunks in Chrome-local OPFS, and deletes the temporary file after Chrome reports a completed download. If a download is interrupted, temporary data may remain until cleanup on a later recording (after seven days). Settings are stored in `chrome.storage.local`. No audio is sent to an external server.
 
 ## 日本語
 
@@ -19,4 +20,4 @@ Recorded WAV files are saved through Chrome's normal Downloads mechanism. Settin
 
 キャプチャした音声、録音ファイル、タブ名、設定内容を外部サーバーへ送信しません。ネットワーク通信を行うコードや、Webサイトへのhost permissionも含みません。
 
-録音したWAVはChrome標準のDownloads機能で保存され、設定は `chrome.storage.local` に保存されます。
+録音したWAV/WebMはChrome標準のDownloads機能で保存されます。Opus録音中は圧縮データをChrome内のOPFS一時領域へ保存し、ダウンロード完了後に削除します。中断した一時ファイルは後続の録音時に7日経過でクリーンアップされます。設定は `chrome.storage.local` に保存されます。

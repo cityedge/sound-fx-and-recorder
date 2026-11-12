@@ -35,7 +35,8 @@ const DEFAULT_RECORDING_SETTINGS = Object.freeze({
   useTabTitle: true,
   useTimestamp: false,
   autoTrim: true,
-  autoStop10Min: true
+  autoStop10Min: true,
+  recordingFormat: 'wav'
 });
 
 let sessionActive = false;
@@ -60,6 +61,8 @@ let recordingStatus = 'idle';
 let recordingSettings = { ...DEFAULT_RECORDING_SETTINGS };
 let currentFilename = 'tab_audio.wav';
 let recordingStopPromise = null;
+let activeOpusRecording = null;
+const pendingOpusDownloads = new Map();
 
 let pcmChunks = [];
 let totalFrames = 0;
@@ -569,9 +572,39 @@ async function startRecording(settings) {
   recordingSettings = normalizeRecordingSettings(settings);
   currentFilename = buildFilename(sessionTabTitle, recordingSettings, new Date());
   resetRecordingBuffers();
-  recordingStatus = 'recording';
-  recorderNode.port.postMessage({ type: 'start-recording' });
-  maybeSendDisplayedDuration(true);
+
+  if (recordingSettings.recordingFormat === 'wav') {
+    // Preserve the proven PCM capture and exact, boundary-only silence trim.
+    recordingStatus = 'recording';
+    recorderNode.port.postMessage({ type: 'start-recording' });
+    maybeSendDisplayedDuration(true);
+  } else {
+    // Opus is encoded incrementally by MediaRecorder and written to OPFS;
+    // the PCM worklet stays in pass-through mode (no PCM accumulation).
+    const names = new Set([...pendingOpusDownloads.values()].map((item) => item.temporary.name));
+    void cleanupStaleOpusFiles(names);
+    activeOpusRecording = new OpusRecording({
+      context: audioContext,
+      outputNode: recorderNode,
+      recordingFormat: recordingSettings.recordingFormat,
+      filename: currentFilename,
+      onProgress: updateOpusDuration,
+      onUnexpectedStop: () => {
+        if (recordingStatus === 'recording') {
+          void stopRecording('opus-ended').catch((error) => reportError(error.message));
+        }
+      }
+    });
+    try {
+      await activeOpusRecording.start();
+      recordingStatus = 'recording';
+    } catch (error) {
+      activeOpusRecording = null;
+      resetRecordingBuffers();
+      throw error;
+    }
+    updateOpusDuration(0);
+  }
   notifyStateChanged();
 }
 
@@ -593,13 +626,19 @@ async function finishRecording(reason) {
   chrome.runtime.sendMessage({
     target: 'service-worker',
     type: 'recording-processing',
+    recordingFormat: recordingSettings.recordingFormat,
     reason
-  });
+  }).catch(() => {});
 
   try {
-    await flushWorklet();
-    finalizePartialAnalysisBlock();
-    const stats = await saveWav();
+    let stats;
+    if (recordingSettings.recordingFormat === 'wav') {
+      await flushWorklet();
+      finalizePartialAnalysisBlock();
+      stats = await saveWav();
+    } else {
+      stats = await saveOpus();
+    }
     displayedSavedSeconds = Math.max(0, Math.floor(Number(stats.savedSeconds || 0)));
     recordingStatus = 'idle';
     resetRecordingBuffers({ keepDisplayedSeconds: true });
@@ -609,12 +648,17 @@ async function finishRecording(reason) {
       target: 'service-worker',
       type: 'recording-stopped',
       stats
-    });
+    }).catch(() => {});
     return stats;
   } catch (error) {
+    if (activeOpusRecording) {
+      await activeOpusRecording.discard();
+      activeOpusRecording = null;
+    }
     recordingStatus = 'idle';
     resetRecordingBuffers({ keepDisplayedSeconds: true });
     notifyStateChanged();
+    reportError(error?.message || String(error));
     throw error;
   }
 }
@@ -622,18 +666,25 @@ async function finishRecording(reason) {
 async function stopFx(reason = 'manual') {
   if (!sessionActive && !audioContext) return;
 
-  if (recordingStatus === 'recording') {
-    await stopRecording(reason === 'manual' ? 'fx-stop' : reason);
-  } else if (recordingStatus === 'processing' && recordingStopPromise) {
-    await recordingStopPromise;
+  let recordingError = null;
+  try {
+    if (recordingStatus === 'recording') {
+      await stopRecording(reason === 'manual' ? 'fx-stop' : reason);
+    } else if (recordingStatus === 'processing' && recordingStopPromise) {
+      await recordingStopPromise;
+    }
+  } catch (error) {
+    recordingError = error;
+  } finally {
+    // An encoder/disk error must never leave the captured tab muted.
+    sessionActive = false;
+    await cleanupAudio();
+    sessionTabId = null;
+    sessionTabTitle = '';
+    recordingStatus = 'idle';
+    notifyStateChanged();
   }
-
-  sessionActive = false;
-  await cleanupAudio();
-  sessionTabId = null;
-  sessionTabTitle = '';
-  recordingStatus = 'idle';
-  notifyStateChanged();
+  if (recordingError) throw recordingError;
 }
 
 function handleWorkletMessage(event) {
@@ -682,7 +733,7 @@ function appendPcm(left, right, frameCount) {
 
   let acceptedFrames = frameCount;
 
-  if (recordingSettings.autoStop10Min) {
+  if (recordingSettings.recordingFormat === 'wav' && recordingSettings.autoStop10Min) {
     const maxFrames = Math.round(sampleRate * AUTO_STOP_SECONDS);
     const remainingFrames = Math.max(0, maxFrames - totalFrames);
     acceptedFrames = Math.min(frameCount, remainingFrames);
@@ -712,6 +763,7 @@ function appendPcm(left, right, frameCount) {
   maybeSendDisplayedDuration(false);
 
   if (
+    recordingSettings.recordingFormat === 'wav' &&
     recordingSettings.autoStop10Min &&
     !autoStopTriggered &&
     totalFrames >= Math.round(sampleRate * AUTO_STOP_SECONDS) &&
@@ -766,9 +818,94 @@ function maybeSendDisplayedDuration(force) {
     target: 'service-worker',
     type: 'recording-estimated-duration',
     savedSeconds,
-    autoTrim: recordingSettings.autoTrim
+    autoTrim: recordingSettings.autoTrim,
+    recordingFormat: 'wav'
   });
   notifyStateChanged();
+}
+
+// This timer is driven by elapsed wall time, not by an uncompressed PCM
+// buffer. No WAV auto-trim or 10-minute limit is applied to Opus formats.
+function updateOpusDuration(seconds) {
+  if (recordingSettings.recordingFormat === 'wav') return;
+  if (!['recording', 'processing'].includes(recordingStatus)) return;
+  const savedSeconds = Math.max(0, Math.floor(seconds));
+  if (savedSeconds === lastDisplayedSavedSecond) return;
+  lastDisplayedSavedSecond = savedSeconds;
+  displayedSavedSeconds = savedSeconds;
+  chrome.runtime.sendMessage({
+    target: 'service-worker',
+    type: 'recording-estimated-duration',
+    savedSeconds,
+    autoTrim: false,
+    recordingFormat: recordingSettings.recordingFormat
+  }).catch(() => {});
+  notifyStateChanged();
+}
+
+async function saveOpus() {
+  if (!activeOpusRecording) throw new Error('Opus recording session is missing.');
+  const recorder = activeOpusRecording;
+  const saved = await recorder.stop();
+  activeOpusRecording = null;
+
+  // The File is a disk-backed OPFS snapshot, not a giant PCM byte array.
+  // Keep its object URL and temporary file until the download completes.
+  let download;
+  try {
+    download = await requestDownload(saved.file, currentFilename, { keepObjectUrl: true });
+  } catch (error) {
+    await saved.temporary.directory.removeEntry(saved.temporary.name).catch(() => {});
+    throw error;
+  }
+  const pending = {
+    downloadId: download.downloadId,
+    url: download.url,
+    temporary: saved.temporary
+  };
+  pendingOpusDownloads.set(download.downloadId, pending);
+  void monitorOpusDownload(pending);
+  return saved.stats;
+}
+
+async function monitorOpusDownload(pending) {
+  // Polling allows the service worker to sleep/wake normally. A download may
+  // still be in progress after STOP has returned and after POWER is off.
+  let completed = false;
+  let interrupted = false;
+  for (let attempt = 0; attempt < 1800; attempt += 1) {
+    try {
+      const response = await chrome.runtime.sendMessage({
+        target: 'service-worker',
+        type: 'get-download-status',
+        downloadId: pending.downloadId
+      });
+      if (response?.ok) {
+        if (response.state === 'complete') { completed = true; break; }
+        if (response.state === 'interrupted' || response.state === 'missing') {
+          interrupted = true;
+          break;
+        }
+      }
+    } catch (error) {
+      console.debug('Download status check deferred:', error);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  if (completed || interrupted) {
+    pendingOpusDownloads.delete(pending.downloadId);
+    URL.revokeObjectURL(pending.url);
+    if (completed) {
+      try { await pending.temporary.directory.removeEntry(pending.temporary.name); }
+      catch (error) { console.warn('Could not delete downloaded Opus temporary file:', error); }
+    } else {
+      // Keep interrupted files for possible manual recovery; they are removed
+      // by the seven-day stale-file cleanup during a later Opus recording.
+      reportError('Opus download was interrupted. / Opusのダウンロードが中断されました。');
+    }
+  } else {
+    console.warn('Could not confirm completion of Opus download; keeping temporary data.');
+  }
 }
 
 async function saveWav() {
@@ -846,18 +983,22 @@ async function saveWav() {
   };
 }
 
-async function requestDownload(blob, filename) {
+async function requestDownload(blob, filename, { keepObjectUrl = false } = {}) {
   const url = URL.createObjectURL(blob);
+  let success = false;
   try {
     const response = await chrome.runtime.sendMessage({
       target: 'service-worker',
-      type: 'download-wav',
+      type: 'download-recording',
       url,
       filename
     });
-    if (!response?.ok) throw new Error(response?.error || 'WAV download failed.');
+    if (!response?.ok) throw new Error(response?.error || 'Recording download failed.');
+    success = true;
+    return { downloadId: response.downloadId, url };
   } finally {
-    setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    if (!success) URL.revokeObjectURL(url);
+    else if (!keepObjectUrl) setTimeout(() => URL.revokeObjectURL(url), 30_000);
   }
 }
 
@@ -878,6 +1019,11 @@ async function cleanupAudio() {
   bypassGain = null;
   recorderNode = null;
 
+  if (activeOpusRecording) {
+    await activeOpusRecording.discard();
+    activeOpusRecording = null;
+  }
+
   if (capturedStream) {
     for (const track of capturedStream.getTracks()) {
       if (track.readyState !== 'ended') track.stop();
@@ -896,6 +1042,7 @@ function getPublicState() {
   return {
     active: sessionActive,
     recordingStatus,
+    recordingFormat: recordingSettings.recordingFormat,
     mode: fxSettings.mode,
     effectAmount: fxSettings.effectAmount,
     bassLevel: fxSettings.bassLevel,
@@ -932,7 +1079,7 @@ function buildFilename(tabTitle, settings, date) {
   const base = settings.useTabTitle ? chooseTabTitle(tabTitle) : 'tab_audio';
   const safeBase = sanitizeFilenamePart(base) || 'tab_audio';
   const suffix = settings.useTimestamp ? `_${formatTimestamp(date)}` : '';
-  return `${safeBase}${suffix}.wav`;
+  return `${safeBase}${suffix}.${settings.recordingFormat === 'wav' ? 'wav' : 'webm'}`;
 }
 
 function sanitizeFilenamePart(value) {
@@ -1002,11 +1149,16 @@ function normalizeToneLevel(value) {
 
 function normalizeRecordingSettings(settings) {
   return {
+    recordingFormat: normalizeRecordingFormat(settings?.recordingFormat),
     useTabTitle: settings?.useTabTitle !== false,
     useTimestamp: settings?.useTimestamp === true,
     autoTrim: settings?.autoTrim !== false,
     autoStop10Min: settings?.autoStop10Min !== false
   };
+}
+
+function normalizeRecordingFormat(value) {
+  return ['wav', 'opus-stereo', 'opus-mono'].includes(value) ? value : 'wav';
 }
 
 function clampSample(value) {

@@ -22,7 +22,8 @@ const DEFAULT_RECORDING_SETTINGS = Object.freeze({
   useTabTitle: true,
   useTimestamp: false,
   autoTrim: true,
-  autoStop10Min: true
+  autoStop10Min: true,
+  recordingFormat: 'wav'
 });
 
 const ui = {
@@ -50,6 +51,7 @@ const ui = {
 let engineState = {
   active: false,
   recordingStatus: 'idle',
+  recordingFormat: 'wav',
   savedSeconds: 0,
   tabTitle: '',
   ...DEFAULT_FX
@@ -294,6 +296,7 @@ async function refreshState() {
       const wasActive = engineState.active;
       engineState.active = state.active === true;
       engineState.recordingStatus = state.recordingStatus || 'idle';
+      engineState.recordingFormat = normalizeRecordingFormat(state.recordingFormat);
       engineState.savedSeconds = Number(state.savedSeconds || 0);
       engineState.tabTitle = state.tabTitle || '';
 
@@ -429,11 +432,14 @@ function render() {
   if (transientError) {
     ui.statusText.textContent = transientError;
   } else if (processing) {
-    ui.statusText.textContent = 'Saving WAV; FX continues. / WAV保存中。FXは継続します。';
+    ui.statusText.textContent = engineState.recordingFormat === 'wav'
+      ? 'Saving WAV; FX continues. / WAV保存中。FXは継続します。'
+      : 'Saving WebM/Opus; FX continues. / Opus保存中。FXは継続します。';
   } else if (recording) {
+    const formatLabel = engineState.recordingFormat === 'wav' ? 'WAV' : 'Opus';
     ui.statusText.textContent = engineState.bypass
-      ? 'Recording clean tab audio. / 原音を録音中。'
-      : 'Recording post-FX audio. / エフェクト後の音を録音中。';
+      ? `${formatLabel}: clean tab audio. / 原音を録音中。`
+      : `${formatLabel}: post-FX audio. / FX後の音を録音中。`;
   } else if (engineState.active && engineState.bypass) {
     ui.statusText.textContent = 'BYPASS active. REC records clean audio. / BYPASS中。RECで原音を録音できます。';
   } else if (engineState.active) {
@@ -506,11 +512,16 @@ function normalizeToneLevel(value) {
 
 function normalizeRecordingSettings(settings) {
   return {
+    recordingFormat: normalizeRecordingFormat(settings.recordingFormat),
     useTabTitle: settings.useTabTitle !== false,
     useTimestamp: settings.useTimestamp === true,
     autoTrim: settings.autoTrim !== false,
     autoStop10Min: settings.autoStop10Min !== false
   };
+}
+
+function normalizeRecordingFormat(value) {
+  return ['wav', 'opus-stereo', 'opus-mono'].includes(value) ? value : 'wav';
 }
 
 function isPlainObject(value) {

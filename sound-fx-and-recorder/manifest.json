@@ -1,7 +1,7 @@
 {
   "name": "Sound FX & Recorder",
-  "description": "A retro-style DSP gadget and WAV recorder for Chrome tabs, with NORMAL, WIDE, SURROUND, ROOM, HALL, BASS/TREBLE boosts and clean BYPASS.",
-  "version": "1.1.4",
+  "description": "Retro DSP effects, BASS/TREBLE EQ and Chrome-tab recording as WAV or compressed WebM/Opus (stereo music or mono speech).",
+  "version": "1.2.0",
   "manifest_version": 3,
   "minimum_chrome_version": "116",
   "action": {

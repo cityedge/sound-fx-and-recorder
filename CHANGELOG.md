@@ -2,6 +2,27 @@
 
 All notable public changes to **Sound FX & Recorder** are documented here.
 
+## Repository and package layout - 2026-11-12
+
+- Published the existing v1.2.0 source under `sound-fx-and-recorder/`; runtime code and the manifest version are unchanged by the layout update.
+- Moved user documentation to the repository/package root and included `WebM_Opus_Converter.bat` as an optional external Windows tool. FFmpeg is not bundled.
+- Added an explicit release-package script and archive exclusions so Codex handoff notes and development files stay out of distribution ZIPs.
+- Opus silence trimming remains a future change; this layout update does not implement it.
+
+## [1.2.0] - 2026-11-12
+
+### Added
+- Three recording formats: WAV (16-bit stereo), WebM/Opus Stereo 128 kbps, and WebM/Opus Mono 64 kbps.
+- Low-memory Opus recording: 2-second encoded MediaRecorder chunks are appended to an OPFS temporary file. A finalized file is downloaded through Chrome; the temporary file is deleted after download completion.
+- Explicit 50%+50% stereo-to-mono downmix on the recording branch, without altering stereo playback.
+- Recording-format selector, filename-extension preview, bilingual format descriptions, and status feedback.
+
+### Preserved / Clarified
+- WAV's existing 10-minute auto-stop remains an optional setting; Opus has no 10-minute limit.
+- WAV's silence trim is unchanged; Opus does not auto-trim silence.
+- BYPASS is never automatically selected when recording. The chosen FX/EQ state is preserved.
+- All existing DSP coefficients, default settings, and per-mode EFFECT/EQ memory semantics remain unchanged.
+
 ## [1.1.4] - 2026-08-24
 
 ### Changed

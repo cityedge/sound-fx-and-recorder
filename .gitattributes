@@ -1,0 +1,10 @@
+# Keep developer-only files in Git but out of source distribution archives.
+*.bat -text whitespace=cr-at-eol
+/.gitattributes export-ignore
+/.gitignore export-ignore
+/CODEX_HANDOFF.md export-ignore
+/scripts export-ignore
+/tests export-ignore
+/output export-ignore
+/build export-ignore
+/dist export-ignore

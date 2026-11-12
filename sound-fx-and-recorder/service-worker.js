@@ -51,7 +51,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === 'download-wav') {
+  if (message.type === 'download-recording' || message.type === 'download-wav') {
     void (async () => {
       try {
         const downloadId = await chrome.downloads.download({
@@ -69,6 +69,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === 'get-download-status') {
+    void (async () => {
+      try {
+        const rows = await chrome.downloads.search({ id: Number(message.downloadId) });
+        sendResponse({ ok: true, state: rows[0]?.state || 'missing', error: rows[0]?.error || null });
+      } catch (error) {
+        sendResponse({ ok: false, error: error?.message || String(error) });
+      }
+    })();
+    return true;
+  }
+
   if (message.type === 'engine-state-changed') {
     void updateActionForState(message.state || defaultEngineState());
     return;
@@ -76,11 +88,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'recording-estimated-duration') {
     const seconds = Math.max(0, Math.floor(Number(message.savedSeconds || 0)));
+    const isWav = message.recordingFormat !== 'opus-stereo' && message.recordingFormat !== 'opus-mono';
     void chrome.action.setBadgeText({ text: formatBadge(seconds) });
     void chrome.action.setBadgeBackgroundColor({ color: '#C62828' });
     void chrome.action.setTitle({
       title:
-        `${message.autoTrim ? 'Estimated WAV / 推定WAV長' : 'Recording / 録音中'} ` +
+        `${isWav && message.autoTrim ? 'Estimated WAV / 推定WAV長' : isWav ? 'WAV Recording / 録音中' : 'Opus Recording / 録音中'} ` +
         `${formatLong(seconds)}\nSound FX & Recorder`
     });
     return;
@@ -89,7 +102,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'recording-processing') {
     void chrome.action.setBadgeText({ text: '...' });
     void chrome.action.setBadgeBackgroundColor({ color: '#616161' });
-    void chrome.action.setTitle({ title: 'Saving WAV / WAV保存処理中\nSound FX & Recorder remains active.' });
+    const format = message.recordingFormat === 'wav' ? 'WAV' : 'WebM/Opus';
+    void chrome.action.setTitle({ title: `Saving ${format} / ${format}保存処理中\nSound FX & Recorder remains active.` });
     return;
   }
 
@@ -100,7 +114,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     void chrome.action.setTitle({
       title:
         `Sound FX & Recorder: ON\n` +
-        `Last WAV / 前回: ${formatLong(Math.round(Number(stats.savedSeconds || 0)))}`
+        `Last ${stats.recordingFormat === 'wav' ? 'WAV' : 'Opus'} / 前回: ${formatLong(Math.round(Number(stats.savedSeconds || 0)))}`
     });
     return;
   }
@@ -122,8 +136,8 @@ async function ensureOffscreenDocument() {
   if (!creatingOffscreenDocument) {
     creatingOffscreenDocument = chrome.offscreen.createDocument({
       url: OFFSCREEN_DOCUMENT_PATH,
-      reasons: ['USER_MEDIA'],
-      justification: 'Capture the selected tab, apply real-time audio effects, monitor the result, and optionally record post-FX WAV audio.'
+      reasons: ['USER_MEDIA', 'BLOBS'],
+      justification: 'Capture and process tab audio, record post-FX WAV or Opus audio, and create download blob URLs.'
     }).finally(() => {
       creatingOffscreenDocument = null;
     });
@@ -181,6 +195,7 @@ function defaultEngineState(fx = {}) {
     trebleLevel: normalizeToneLevel(fx.trebleLevel),
     bypass: fx.bypass === true,
     savedSeconds: 0,
+    recordingFormat: 'wav',
     tabTitle: ''
   };
 }
