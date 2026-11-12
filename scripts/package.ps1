@@ -19,6 +19,8 @@ $extensionFiles = @(
     'offscreen.html'
     'offscreen.js'
     'opus-recorder.js'
+    'opus-trim-worker.js'
+    'webm-opus.js'
     'pcm-recorder-worklet.js'
     'pcm-utils.js'
     'popup.html'

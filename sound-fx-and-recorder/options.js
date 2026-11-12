@@ -104,9 +104,7 @@ function updateFilenamePreview() {
 function updateRecordingControls() {
   const fmt = normalizeRecordingFormat(controls.recordingFormat.value);
   const isWav = fmt === 'wav';
-  controls.autoTrim.disabled = !isWav;
   controls.autoStop10Min.disabled = !isWav;
-  document.getElementById('autoTrimRow').classList.toggle('unavailable', !isWav);
   document.getElementById('autoStopRow').classList.toggle('unavailable', !isWav);
   const info = {
     wav: '48 kHz / 16-bit / stereo at a typical 48 kHz output ≈ 691 MB per hour. / 標準48kHz時、約691 MB/時。',

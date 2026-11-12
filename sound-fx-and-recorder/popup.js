@@ -298,6 +298,7 @@ async function refreshState() {
       engineState.recordingStatus = state.recordingStatus || 'idle';
       engineState.recordingFormat = normalizeRecordingFormat(state.recordingFormat);
       engineState.savedSeconds = Number(state.savedSeconds || 0);
+      engineState.recordingWarning = state.recordingWarning || '';
       engineState.tabTitle = state.tabTitle || '';
 
       // Only the running offscreen engine is authoritative for FX values.
@@ -431,10 +432,12 @@ function render() {
 
   if (transientError) {
     ui.statusText.textContent = transientError;
+  } else if (engineState.recordingWarning && !recording && !processing) {
+    ui.statusText.textContent = engineState.recordingWarning;
   } else if (processing) {
     ui.statusText.textContent = engineState.recordingFormat === 'wav'
       ? 'Saving WAV; FX continues. / WAV保存中。FXは継続します。'
-      : 'Saving WebM/Opus; FX continues. / Opus保存中。FXは継続します。';
+      : 'Preparing WebM/Opus; FX continues. / Opusの解析・保存中。FXは継続します。';
   } else if (recording) {
     const formatLabel = engineState.recordingFormat === 'wav' ? 'WAV' : 'Opus';
     ui.statusText.textContent = engineState.bypass

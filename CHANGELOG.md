@@ -2,12 +2,20 @@
 
 All notable public changes to **Sound FX & Recorder** are documented here.
 
+## [1.2.0] in-place update - 2026-11-12
+
+- Enabled the existing shared silence-trim switch for Opus Stereo and Opus Mono as well as WAV. The 10-minute auto-stop remains WAV-only.
+- Added bounded-memory, worker-based Opus analysis and WebM remuxing after STOP. Only recording boundaries are trimmed; internal pauses and entirely silent recordings are preserved. Original compressed packets are retained without re-encoding.
+- Kept MediaRecorder-to-OPFS recording, existing DSP, BYPASS, FX/EQ preference storage and continued FX playback after STOP.
+- Preserved completed recordings when trimming fails: save the untrimmed original and display a warning in the popup.
+- Kept manifest version 1.2.0 at the user's request; updated the explicit package file list.
+
 ## Repository and package layout - 2026-11-12
 
 - Published the existing v1.2.0 source under `sound-fx-and-recorder/`; runtime code and the manifest version are unchanged by the layout update.
 - Moved user documentation to the repository/package root and included `WebM_Opus_Converter.bat` as an optional external Windows tool. FFmpeg is not bundled.
 - Added an explicit release-package script and archive exclusions so Codex handoff notes and development files stay out of distribution ZIPs.
-- Opus silence trimming remains a future change; this layout update does not implement it.
+- The layout-only change did not implement Opus trimming; the subsequent in-place update above adds it.
 
 ## [1.2.0] - 2026-11-12
 
@@ -19,7 +27,7 @@ All notable public changes to **Sound FX & Recorder** are documented here.
 
 ### Preserved / Clarified
 - WAV's existing 10-minute auto-stop remains an optional setting; Opus has no 10-minute limit.
-- WAV's silence trim is unchanged; Opus does not auto-trim silence.
+- WAV's silence trim is unchanged. Opus trimming was initially unavailable; see the subsequent in-place update above.
 - BYPASS is never automatically selected when recording. The chosen FX/EQ state is preserved.
 - All existing DSP coefficients, default settings, and per-mode EFFECT/EQ memory semantics remain unchanged.
 

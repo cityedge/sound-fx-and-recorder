@@ -10,7 +10,7 @@ const OPUS_TEMP_DIRECTORY = 'sfxr-recording-temp';
 const OPUS_TEMP_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 class OpusRecording {
-  constructor({ context, outputNode, recordingFormat, filename, onProgress, onUnexpectedStop }) {
+  constructor({ context, outputNode, recordingFormat, filename, autoTrim = false, trimSettings, onProgress, onUnexpectedStop }) {
     if (!['opus-stereo', 'opus-mono'].includes(recordingFormat)) {
       throw new Error('Invalid Opus recording format.');
     }
@@ -18,6 +18,8 @@ class OpusRecording {
     this.outputNode = outputNode;
     this.recordingFormat = recordingFormat;
     this.filename = filename;
+    this.autoTrim = autoTrim;
+    this.trimSettings = trimSettings;
     this.onProgress = onProgress;
     this.onUnexpectedStop = onUnexpectedStop;
     this.targetBitrate = recordingFormat === 'opus-mono' ? 64000 : 128000;
@@ -157,8 +159,28 @@ class OpusRecording {
       this.writable = null;
 
       // File is backed by browser-local OPFS, not a heap-sized PCM buffer.
-      const file = await this.fileHandle.getFile();
+      let file = await this.fileHandle.getFile();
       if (file.size <= 0) throw new Error('Opus recording produced no data.');
+      // Release only the recording tap before the potentially longer disk pass.
+      // The offscreen monitor/DSP graph continues running throughout trimming.
+      this._releaseGraph();
+      let trimStats = {};
+      if (this.autoTrim) {
+        try {
+          const trimmed = await this._trimFile(file);
+          trimStats = trimmed.stats;
+          if (!trimmed.unchanged) {
+            const originalName = this.fileName;
+            this.fileName = trimmed.name;
+            file = trimmed.file;
+            await this.directory.removeEntry(originalName).catch((error) => console.warn('Opus source cleanup deferred:', error));
+          }
+        } catch (error) {
+          // A trim/decoder/quota failure must not destroy a completed recording.
+          console.warn('Opus trim skipped; preserving the original recording:', error);
+          trimStats.trimWarning = 'Silence trim failed; saved without trimming. / 無音トリムに失敗したため、録音全体を保存しました。';
+        }
+      }
       const result = {
         stats: {
           capturedSeconds: this.elapsedSeconds(),
@@ -166,6 +188,7 @@ class OpusRecording {
           leadingTrimSeconds: 0,
           trailingTrimSeconds: 0,
           foundAudio: true,
+          ...trimStats,
           sampleRate: this.context.sampleRate,
           recordingFormat: this.recordingFormat,
           targetBitrate: this.targetBitrate,
@@ -175,11 +198,45 @@ class OpusRecording {
         file,
         temporary: { directory: this.directory, name: this.fileName }
       };
-      this._releaseGraph();
       return result;
     } catch (error) {
       await this.discard();
       throw error;
+    }
+  }
+
+  async _trimFile(file) {
+    const name = `opus-${Date.now()}-${crypto.randomUUID().slice(0, 12)}.webm`;
+    let worker;
+    let watchdog;
+    try {
+      worker = new Worker(chrome.runtime.getURL('opus-trim-worker.js'));
+      const result = await new Promise((resolve, reject) => {
+        const keepAlive = () => {
+          clearTimeout(watchdog);
+          watchdog = setTimeout(() => reject(new Error('Opus trim worker stopped responding.')), 60000);
+        };
+        worker.onmessage = ({ data }) => {
+          keepAlive();
+          if (data.type === 'complete') resolve(data);
+          else if (data.type === 'error') reject(new Error(data.error));
+        };
+        worker.onerror = (event) => {
+          event.preventDefault();
+          reject(new Error(event.message || 'Opus trim worker failed.'));
+        };
+        worker.onmessageerror = () => reject(new Error('Opus trim worker response could not be read.'));
+        keepAlive();
+        worker.postMessage({ file, directory: this.directory, outputName: name, settings: this.trimSettings });
+      });
+      return { ...result, name };
+    } catch (error) {
+      worker?.terminate();
+      await this.directory.removeEntry(name).catch(() => {});
+      throw error;
+    } finally {
+      clearTimeout(watchdog);
+      worker?.terminate();
     }
   }
 

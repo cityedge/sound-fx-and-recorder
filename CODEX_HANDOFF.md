@@ -2,7 +2,7 @@
 
 **基準版：v1.2.0 / 更新日：2026-11-12 / 対象：Chrome拡張（Manifest V3、Chrome 116以降）**
 
-**配置整理（2026-11-12）**：リポジトリ直下は文書・外部変換BAT・開発用ファイル、拡張本体は配下の `sound-fx-and-recorder/` とする。JavaScript・HTML・CSS・Manifest・アイコンは既存v1.2.0をそのまま使用。Opusの無音トリムON/OFF対応は要望として受領済みだが、今回の配置整理には含めず、現行v1.2.0では引き続きWAV専用。
+**更新（2026-11-12）**：拡張本体は配下の `sound-fx-and-recorder/`、文書・外部変換BATはリポジトリ直下。配置整理に続き、ユーザー指示によりOpusにも共通の無音トリムON/OFFを追加し、バージョンは1.2.0を維持した。10分停止はWAV専用、既存DSPと設定記憶は維持。
 
 > **Codexへの最初の指示**：この書類とリポジトリ内の実装コードを最初に確認すること。現段階では、ユーザーからの新しい改修依頼なしにDSPの係数・録音形式・既存設定を変更しない。ここに記載した機能は「仕様」、テスト履歴は「確認済み範囲」であり、未検証項目を検証済みと扱わない。
 
@@ -12,7 +12,7 @@
 2. カジュアルな**レトロ・オーディオガジェット**。高精度な3D音場再現やDAWを目指さず、わざと大げさなWIDE / SURROUND / ROOM / HALLを楽しむ。**ユーザーが実機で聴いて確定したDSPの音色を無断で変えない**。
 3. **3種類の録音形式**：`wav`（16-bit stereo PCM）、`opus-stereo`（WebM/Opus 128 kbps）、`opus-mono`（WebM/Opus 64 kbps）。Opusのビットレートは目標値。初期値はWAV。
 4. **WAVとOpusの保存方式は別物**。WAVはPCMをRAMに蓄積して停止時に生成。Opusは`MediaRecorder`で圧縮した約2秒単位のBlobを**順次OPFSへ書き込み**、停止後にWebMをダウンロードする。OpusのPCM全量バッファは作らない。
-5. **10分自動停止と無音トリムはWAV専用**。WAVでは各オプションを従来どおりON/OFFできる。Opusでは適用せず、Settingsで操作を無効化（保存済みのWAV用設定値は保持）。
+5. **無音トリムは3形式共通のON/OFF、10分自動停止はWAV専用**。Opus選択時に無効化するのは10分停止だけで、その保存値は保持する。OpusトリムはSTOP後にWorkerで逐次解析し、圧縮パケットを再エンコードせずWebMへ再構成する。
 6. **録音でBYPASSを自動適用しない**。RECを押した瞬間に聴いている出力（DSP・EQ込み／BYPASSなら原音）を、そのまま録音する。録音中の操作変更も反映する。
 7. **REC/STOPとPOWERは独立**。録音停止後も音声再生とFXは継続。POWERを切る際に録音中なら録音を確定してからキャプチャを解放する。
 8. **公開はGitHub配布・手動インストール**。Chrome Web Store登録は現時点で予定なし。ビルド不要、リポジトリ配下の `sound-fx-and-recorder/` がChromeに読み込ませる拡張フォルダ。
@@ -119,8 +119,8 @@ Chrome tab
 - Opusの128/64kbpsはMediaRecorderへ渡す`audioBitsPerSecond`の**目標値**。実測値やファイルサイズを厳密保証する値ではない。
 - 録音形式は**REC時にSettingsから読み取り、その録音セッションに固定**する。録音中にSettingsを変更しても既に始まった録音の形式は変わらない。
 - **録音開始時にBYPASSを自動的に変更してはいけない**（ユーザー明示）。録音内容はその瞬間のモニターと同じ信号。録音中にDSP/EQ/BYPASSを操作した変更も反映される。
-- WAVの`autoTrim`と`autoStop10Min`はそれぞれ既定ONだが、WAVではユーザーが無効化可能。**Opusでは両方無効／時間制限なし**。Settingsでは両チェックボックスをdisabledにし、選択値は保持してWAVへ戻したとき復元する。
-- 無音トリム対象はWAVのみ。OpusはWebMの整合性維持を優先して録音開始から停止までそのまま保存。
+- `autoTrim`は3形式共通のON/OFF（既定ON、既存保存値を引き継ぐ）。`autoStop10Min`はWAVのみ（既定ON）で、Opus選択時はそのチェックボックスだけdisabledとし、保存値は保持する。
+- 無音トリムは先頭・末尾のみ。途中の無音は残し、有音が見つからない場合は全体を保持する。Opusでは保存済み圧縮音声を少量ずつデコードして判定するため、圧縮前PCMを判定するWAVと境界が完全一致する保証はない。
 
 ### 4.1 WAV録音の実装（既存・変更しない）
 
@@ -143,9 +143,10 @@ Chrome tab
 5. `MediaRecorder(stream, {mimeType:'audio/webm;codecs=opus', audioBitsPerSecond: 128000 または 64000})`を開始。`start(2000)`で約2秒単位の`dataavailable`を受け取る。
 6. **各Blobを`writeChain`のPromise連鎖で順番にOPFSへ`write()`**。長時間分のPCMや全WebMチャンク配列をメモリへためない。ただしエンコード／書込遅延・ブラウザ内部のメモリはゼロにはならず、OPFS容量制限も受ける。
 7. STOPでは`MediaRecorder.stop()`の最後の`dataavailable`と`stop`イベントを待ち、全`writeChain`を完了させて`writable.close()`。`fileHandle.getFile()`の`File`を取得する。
-8. `URL.createObjectURL(file)`→Service Workerの`download-recording`→`chrome.downloads.download`へ渡す。STOPボタン操作が成功して録音状態がidleへ戻っても、**ブラウザの実ファイルダウンロード完了とは限らない**。
-9. `offscreen.js/monitorOpusDownload()`が約2秒間隔で`get-download-status`を問い合わせ、`complete`を確認するとObjectURLを破棄しOPFS一時ファイルを削除。中断なら一時ファイルを当面保持する。追跡には上限があり、完了を確認できない場合は一時データが残り得る。
-10. 次回Opus録音時に`cleanupStaleOpusFiles()`を呼び、**7日より古い拡張所有の一時ファイルだけ**を削除（追跡中の名前は除外）。現在は**途中失敗した録音のユーザー向け復旧UIはない**。
+8. `autoTrim`がONなら `opus-trim-worker.js` を起動。`webm-opus.js`でディスク上のWebMを逐次読み、AudioDecoderへ最大16パケットずつ渡す。PCMは即座にRMSへ集約し、先頭・末尾の有音ブロック位置だけ保持する。入力のMediaRecorder時刻の小さな揺れはパケットのサンプル時計に揃える。別のOPFS一時ファイルへ対象パケットを逐次書き出し、80msのデコーダー準備区間、OpusHeadのpre-skip、CodecDelay、終端DiscardPaddingを調整する。全録音分のPCM・RMS配列・パケット配列は保持しない。トリム成功時のみ元の一時ファイルを削除する。失敗時は完成済み原本を未トリムで保存し、`recordingWarning`で通知する。
+9. `URL.createObjectURL(file)`→Service Workerの`download-recording`→`chrome.downloads.download`へ渡す。STOPボタン操作が成功して録音状態がidleへ戻っても、**ブラウザの実ファイルダウンロード完了とは限らない**。
+10. `offscreen.js/monitorOpusDownload()`が約2秒間隔で`get-download-status`を問い合わせ、`complete`を確認するとObjectURLを破棄しOPFS一時ファイルを削除。中断なら一時ファイルを当面保持する。追跡には上限があり、完了を確認できない場合は一時データが残り得る。
+11. 次回Opus録音時に`cleanupStaleOpusFiles()`を呼び、**7日より古い拡張所有の一時ファイルだけ**を削除（追跡中の名前は除外）。現在は**途中失敗した録音のユーザー向け復旧UIはない**。
 
 **重要な未検証領域**：OPFS保存容量の不足、Chrome強制終了・拡張Reload中の録音、ダウンロード中断後の回復、1時間前後の連続録音については、実環境での耐久試験が未実施。OPFSへ書く設計だからといってクラッシュ耐性・完全復旧を保証しない。
 
@@ -166,6 +167,8 @@ sound-fx-and-recorder/          ← リポジトリ配下の拡張本体。Chrom
 ├─ offscreen.html              pcm-utils.js → opus-recorder.js → offscreen.js を順にロード
 ├─ offscreen.js                キャプチャ、DSP Audio Graph、録音形式分岐、状態管理、保存
 ├─ opus-recorder.js            【v1.2.0新規】MediaRecorder→OPFS、モノラル化、停止、掃除
+├─ opus-trim-worker.js         Opusの逐次デコード・境界判定・OPFSへのトリム保存
+├─ webm-opus.js                小分けのWebM読取・Opusパケットの無再圧縮リマックス
 ├─ pcm-recorder-worklet.js     PCM収集・非録音時の音声パススルー
 ├─ pcm-utils.js                WAV生成／無音判定・トリム
 ├─ popup.html / popup.js / popup.css       3×2 FX/EQ/録音操作UI
@@ -195,11 +198,11 @@ sound-fx-and-recorder/          ← リポジトリ配下の拡張本体。Chrom
 | **`recordingFormat`** | **`'wav'`** | **v1.2.0追加。`wav` / `opus-stereo` / `opus-mono`** |
 | `useTabTitle` | `true` | ダウンロード名にタブ名を使う |
 | `useTimestamp` | `false` | ダウンロード名に日時を付ける |
-| `autoTrim` | `true` | **WAVのみ**の前後無音トリム |
+| `autoTrim` | `true` | **3形式共通**の前後無音トリム |
 | `autoStop10Min` | `true` | **WAVのみ**の10分停止（OFF可能） |
 
 - 設定は既存キーを変更・削除せず後方互換で扱う。v1.1.4からの移行では`recordingFormat`が未保存なら`wav`として動作する。
-- Settingsで録音形式を変更すると、ファイル名プレビューの拡張子（`.wav`/`.webm`）とWAV専用チェックボックスの操作可否が変わる。
+- Settingsで録音形式を変更すると、ファイル名プレビューの拡張子（`.wav`/`.webm`）とWAV専用の10分停止チェックボックスの操作可否が変わる。無音トリムは常に操作可能。
 - 録音開始時に`popup.js`が設定をスナップショット取得してOffscreenへ送る。録音中にSettingsを変更しても実行中の録音には適用しない。
 - EQはFX共通、EFFECT値はモード別。これを統合して勝手にモード別EQにしない。
 
@@ -251,11 +254,14 @@ POWER OFF
 | v1.0.0 | GitHub公開向けパッケージ化、製品名を確定 |
 | v1.1.0–v1.1.2 | NORMAL・全モード共通EQ・3×2UI導入。BASS/TREBLEとも最大+12dBへ調整し、ユーザーが音色を承認 |
 | v1.1.3–v1.1.4 | EQセル点灯、`+EQ`表示、設定ラベル明確化。既存保存方式は維持 |
-| **v1.2.0** | **WAV + Opus Stereo 128kbps + Opus Mono 64kbps。OpusはMediaRecorder→OPFS逐次保存、WAV専用10分停止／無音トリムを維持。既存DSP係数は変更なし** |
+| **v1.2.0** | **WAV + Opus Stereo 128kbps + Opus Mono 64kbps。OpusはMediaRecorder→OPFS逐次保存。追更新で無音トリムを3形式共通に拡張し、10分停止はWAV専用。既存DSP係数は変更なし** |
 
 ### 8.2 検証済み／未検証（混同しない）
 
 **確認できていること**
+
+- 2026-11-12の追更新では `tests/opus-trim-browser.cjs` により、Chromiumの拡張Offscreen＋実MediaRecorder／OPFS／Worker／Downloadsで短時間録音を検証。ステレオ・モノラルのトリムON/OFF、途中の無音保持、全無音・短い音の全体保持、WAV回帰、STOP後のFX継続、設定画面の保存・復元を確認。入力だけ合成音に置換しており、実タブのtabCapture権限経路・聴感評価は別扱い。
+- トリム後の圧縮Opusパケットが元録音の連続部分とバイト一致し、ChromeとFFmpegのデコード時間が一致することを検証。FFmpegで生成した1時間のステレオOpus（前後2秒無音、約58MB）をOPFSへ置き、逐次解析・再保存・全体デコードを約58秒で完了。Worker JSヒープの観測最大値は約12.6MB、backing storageの観測最大値は約62.4MB。この観測はChrome全体のRAM保証ではなく、1時間の実時間録音耐久試験でもない。
 
 - v1.1.4までのDSP・EQ・POWER/BYPASS・操作感はユーザーがChromeで実際に確認済み。v1.2.0ではDSP本体・PCM Workletの調整済み実装を維持している。
 - v1.2.0のブラウザ側の短いMediaRecorderテストでWebM/Opusを生成し、ffprobeによる**ステレオ2ch／モノラル1ch**の確認を実施したとの開発記録がある。ただし、そのテストのストレージ部分はメモリモックであり、**実Chrome拡張のOPFS/Downloads経路の完全なテストではなかった**。
@@ -316,7 +322,7 @@ POWER OFF
 - [ ] Opus Stereo 128kbpsでWebMを保存し、ffprobeで2ch・Opusと確認。
 - [ ] Opus Mono 64kbpsでWebMを保存し、ffprobeで1ch・Opusと確認。聴取用出力はステレオのまま。
 - [ ] 両OpusモードでFX/EQ/BYPASS変更が反映され、BYPASSは自動切替されない。
-- [ ] Opusに無音トリム／10分停止が**適用されない**。録音形式切替でSettingsの無効状態・選択値保持が正しい。
+- [ ] Opusでも無音トリムON/OFFが反映され、途中の無音・全無音録音は保持される。10分停止はOpusに適用しない。Settingsの共通値保持と10分停止のみdisabledを確認。
 - [ ] 2秒チャンク順次書込・最終チャンク確定・保存後のデコード・連続2回録音。
 - [ ] STOP後もFXが継続。ダウンロード完了後にOPFS一時ファイルが削除される。
 - [ ] ダウンロード中断や失敗、Chrome終了、ディスク容量不足で**データを黙って失わないか**確認。未完成録音の復旧UIは現状ない。
@@ -330,13 +336,13 @@ POWER OFF
 - MediaRecorderのWebM/OpusはMP3やWAVに比べ互換性が限定的。別途FFmpeg補助BATあり。Chrome拡張本体にFFmpegを組み込む必要はない。
 - `DynamicsCompressorNode`は完全なクリップ防止装置ではない。B/T両方＋12dBで強い信号を入れた際の挙動は要確認。
 - オーディオ品質は実装論だけでは評価できない。聴感テストを伴わず「上品」「自然」にチューニングし直すことは、製品コンセプトにも過去のユーザー評価にも反する。
-- 自動テスト環境／CIは未整備。追加する場合も、素のChrome拡張として読み込める利便性を維持。
+- `tests/opus-trim-browser.cjs`にPlaywright＋Chromium拡張の自動テストがある。入力だけ合成音へ置換し、Offscreen・MediaRecorder・OPFS・Worker・Downloadsは実APIを使用する。実タブのtabCaptureとユーザー聴感評価は別途必要。CIは未整備で、拡張実行時のビルド・外部依存は追加していない。
 - プライバシー：音声・タブタイトル・設定を外部サーバーへ送る仕様ではない。外部送信・外部権限・テレメトリーなどの追加は事前に確認する。
 
 ## 11. Codexへの初回プロンプト（そのまま渡せる）
 
-> このリポジトリはChrome拡張 **Sound FX & Recorder v1.2.0** です。最初に`CODEX_HANDOFF.md`と`README.md`、`CHANGELOG.md`を読み、次に`manifest.json`、`popup.js`、`offscreen.js`、`opus-recorder.js`、`service-worker.js`を確認してください。v1.2.0では、既存の調整済みDSP・共通EQ・WAV録音に加えて、Opus Stereo 128kbpsとOpus Mono 64kbpsのMediaRecorder→OPFS録音を追加しています。**録音開始時にBYPASSを自動適用しないこと**、**WAVだけ任意の10分停止と無音トリムがあり、Opusはどちらも適用しないこと**、**STOP後もPOWER/FXを継続すること**を守ってください。音響係数と既存設定キーを、指示なしに変更しないでください。まずはコード改修を行わず、構成、既存仕様、未検証箇所、今後のテスト方針を簡潔に報告してください。UIはダークテーマ・日英併記、公開方法はGitHubでの手動インストールを維持します。
+> このリポジトリはChrome拡張 **Sound FX & Recorder v1.2.0（Opus無音トリム追更新版）** です。最初に本書とREADME、CHANGELOG、続いて拡張フォルダの主要JSを確認してください。**録音開始でBYPASSを自動変更しないこと**、**無音トリムは全形式共通ON/OFF、10分停止はWAV専用**、**STOP後もPOWER/FXを継続すること**、**Opusで全量PCMをメモリに蓄積しないこと**を守ってください。DSP係数と既存設定記憶を指示なしに変更せず、UIはダークテーマ・日英併記、公開方法はGitHub手動インストールを維持してください。
 
 ---
 
-**引き継ぐ正本**：リポジトリの `sound-fx-and-recorder/` にあるv1.2.0ソースを基準とする。本書はリポジトリ直下で管理し、配布ZIPから除外する。補助のFFmpeg変換BATは外部ツールとして拡張フォルダの外に同梱する。**今回の配置整理ではv1.2.0のJavaScript/Manifest/DSPコードを変更していない。**
+**引き継ぐ正本**：リポジトリの `sound-fx-and-recorder/` にあるv1.2.0追更新版を基準とする。本書は配布ZIPから除外し、変換BATは外部ツールとして拡張フォルダの外に同梱する。**Opusトリム処理を追加したが、Manifestのバージョン・DSP係数・WAVの既存処理・設定記憶は維持している。**

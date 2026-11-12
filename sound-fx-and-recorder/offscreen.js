@@ -75,6 +75,7 @@ let analysisLevels = [];
 let flushResolver = null;
 let lastDisplayedSavedSecond = -1;
 let displayedSavedSeconds = 0;
+let recordingWarning = '';
 let autoStopTriggered = false;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -153,6 +154,7 @@ async function startFx({ streamId, tabId, tabTitle, fx }) {
   sessionTabId = typeof tabId === 'number' ? tabId : null;
   sessionTabTitle = chooseTabTitle(tabTitle);
   displayedSavedSeconds = 0;
+  recordingWarning = '';
 
   try {
     capturedStream = await navigator.mediaDevices.getUserMedia({
@@ -570,6 +572,7 @@ async function startRecording(settings) {
   }
 
   recordingSettings = normalizeRecordingSettings(settings);
+  recordingWarning = '';
   currentFilename = buildFilename(sessionTabTitle, recordingSettings, new Date());
   resetRecordingBuffers();
 
@@ -588,6 +591,14 @@ async function startRecording(settings) {
       outputNode: recorderNode,
       recordingFormat: recordingSettings.recordingFormat,
       filename: currentFilename,
+      autoTrim: recordingSettings.autoTrim,
+      trimSettings: {
+        thresholdDb: TRIM_THRESHOLD_DB,
+        analysisBlockMs: ANALYSIS_BLOCK_MS,
+        minimumActiveMs: MINIMUM_ACTIVE_MS,
+        leadingPaddingMs: LEADING_PADDING_MS,
+        trailingPaddingMs: TRAILING_PADDING_MS
+      },
       onProgress: updateOpusDuration,
       onUnexpectedStop: () => {
         if (recordingStatus === 'recording') {
@@ -640,6 +651,7 @@ async function finishRecording(reason) {
       stats = await saveOpus();
     }
     displayedSavedSeconds = Math.max(0, Math.floor(Number(stats.savedSeconds || 0)));
+    recordingWarning = stats.trimWarning || '';
     recordingStatus = 'idle';
     resetRecordingBuffers({ keepDisplayedSeconds: true });
     notifyStateChanged();
@@ -1049,6 +1061,7 @@ function getPublicState() {
     trebleLevel: fxSettings.trebleLevel,
     bypass: fxSettings.bypass,
     savedSeconds: displayedSavedSeconds,
+    recordingWarning,
     tabTitle: sessionTabTitle,
     tabId: sessionTabId
   };

@@ -22,7 +22,7 @@ Chrome 116+ / Manifest V3. Manual installation only; this project is not distrib
 - **Live changes while recording** — mode, EFFECT, and BYPASS changes are captured in the recording
 - Filename options using tab title and/or timestamp
 - Automatic duplicate-name handling through Chrome Downloads
-- Optional leading/trailing silence trim
+- Optional leading/trailing silence trim shared by WAV and both Opus formats
 - Optional 10-minute automatic stop **for WAV only**; Opus has no automatic time limit
 - Per-mode EFFECT-level memory and selectable startup mode
 
@@ -84,14 +84,16 @@ Recordings contain the **current monitored signal**. The app never switches BYPA
 
 - The Opus bitrates are encoder **targets**, not strict file-size guarantees. The mono recording branch explicitly combines left and right at 50% each; the monitor remains stereo.
 - **WAV** retains the existing optional leading/trailing silence trim (`-55 dB` threshold with padding), 16-bit PCM encoding and user-selectable 10-minute auto-stop. WAV continues to buffer PCM in memory; do **not** rely on it for hour-long recordings on low-memory systems.
-- **Opus** uses `MediaRecorder` (`audio/webm;codecs=opus`) and writes 2-second encoded chunks sequentially to browser-private OPFS instead of collecting PCM chunks. There is **no 10-minute limit**, and **no automatic silence trim** for either Opus format (the checkboxes are inactive in Settings when Opus is selected).
+- **Opus** uses `MediaRecorder` (`audio/webm;codecs=opus`) and writes 2-second encoded chunks sequentially to browser-private OPFS instead of collecting PCM chunks. There is **no 10-minute limit**. Only the 10-minute-stop checkbox is inactive when Opus is selected.
+- **Auto trim silence** is one shared ON/OFF setting for all three formats. Existing preferences are retained; the default is ON. Only leading/trailing silence is removed, keeping pauses inside the recording and padding before/after audible content. An entirely silent recording is kept intact.
+- With Opus trim ON, a dedicated Worker analyzes small decoded portions after STOP using the same `-55 dB`, 20 ms RMS / 60 ms minimum activity and 250/500 ms padding criteria as WAV. It writes the selected original Opus packets into a new temporary WebM, accounting for decoder preroll and end padding. There is **no re-encoding and no full-length PCM buffer**. Saving takes additional time and temporarily needs space for both compressed files; FX continues throughout. If analysis or trimming fails, the completed original is downloaded without trimming and the popup shows a warning.
 - Once STOP is pressed, the temporary Opus file is finalized and offered via Chrome Downloads. The extension monitors download status and removes the temporary file **after Chrome reports download completion**. Cancelled/interrupted files can remain temporarily in OPFS; old temporary files are pruned after 7 days on a subsequent Opus recording.
 - In Settings, the chosen format is remembered and applies to the **next** recording; changing it mid-recording does not change the current file.
 - For speech recognition, a clean BYPASS recording often works better than a strong surround/reverb setting, but this is entirely under the user's control.
 - WebM/Opus support varies among transcription services. Convert externally if the chosen service does not accept `.webm`.
 - A browser crash or extension reload during recording can cause loss of an incomplete recording. OPFS storage has browser-managed quotas and is not a backup. Save completed recordings via STOP and verify the download.
 
-日本語：録音形式はWAV（従来どおり）、Opus Stereo 128kbps（音楽向け）、Opus Mono 64kbps（対談・文字起こし向け）の3種類です。Opusは圧縮データを2秒単位でChrome内の一時領域へ書き込み、録音中のPCMメモリ蓄積を回避します。WAVの10分自動停止はオプションのまま、Opusには適用しません。無音トリムはWAVのみで、Opusでは行いません。BYPASSは自動変更されません。
+日本語：録音形式はWAV・Opus Stereo・Opus Monoの3種類です。無音トリムは全形式共通のスイッチでON/OFFでき、保存済みの設定値を引き継ぎます。途中の無音や会話の間は残し、全無音の場合も録音全体を残します。Opusは従来どおり圧縮音声をOPFSへ逐次保存し、トリムON時はSTOP後に少量ずつ解析して、再エンコードせずに前後を切り出します。処理中もFXは継続します。トリムに失敗した場合は、録音全体を保存して警告を表示します。10分自動停止はWAV専用のままで、BYPASSも自動変更しません。
 
 ## External converter / 外部変換ツール
 
@@ -130,6 +132,7 @@ repository / release ZIP
 │  ├─ service-worker.js
 │  ├─ offscreen.html / offscreen.js
 │  ├─ pcm-recorder-worklet.js / pcm-utils.js / opus-recorder.js
+│  ├─ opus-trim-worker.js / webm-opus.js
 │  ├─ popup.html / popup.js / popup.css
 │  ├─ options.html / options.js / options.css
 │  └─ icons/
@@ -154,7 +157,7 @@ pwsh -File scripts/package.ps1
 
 The script reads the version from `sound-fx-and-recorder/manifest.json` and writes `output/releases/sound-fx-and-recorder-v<version>.zip`. It packages an explicit list of runtime files, the converter and user documentation. Handoff notes, development scripts and previous ZIPs are not included. Runtime files are copied unchanged.
 
-日本語：配布ZIPは上記コマンドで生成します。引き継ぎ書・開発用ファイルは配布対象に含めません。今回の配置整理ではv1.2.0の録音処理を変更しておらず、Opusの無音トリム対応は今後の開発事項です。
+日本語：配布ZIPは上記コマンドで生成します。引き継ぎ書・開発用ファイルは配布対象に含めません。2026-11-12のOpus無音トリム追加は、ユーザー指定によりバージョン番号を1.2.0のまま更新しています。
 
 ## License
 
