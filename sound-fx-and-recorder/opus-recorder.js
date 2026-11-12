@@ -8,6 +8,7 @@ const OPUS_MIME_TYPE = 'audio/webm;codecs=opus';
 const OPUS_CHUNK_INTERVAL_MS = 2000;
 const OPUS_TEMP_DIRECTORY = 'sfxr-recording-temp';
 const OPUS_TEMP_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const opusAnalysisModules = new WeakMap();
 
 class OpusRecording {
   constructor({ context, outputNode, recordingFormat, filename, autoTrim = false, trimSettings, onProgress, onUnexpectedStop }) {
@@ -39,6 +40,11 @@ class OpusRecording {
     this.stopTime = 0;
     this.bytesWritten = 0;
     this.stopRequested = false;
+    this.analyser = null;
+    this.boundaries = null;
+    this.analysisError = null;
+    this.snapshotPending = false;
+    this.analysisStop = null;
   }
 
   async start() {
@@ -50,12 +56,27 @@ class OpusRecording {
     }
 
     try {
+      if (this.autoTrim) {
+        if (!opusAnalysisModules.has(this.context)) {
+          opusAnalysisModules.set(this.context, this.context.audioWorklet.addModule(chrome.runtime.getURL('silence-detector-worklet.js')));
+        }
+        await opusAnalysisModules.get(this.context);
+      }
       this.destination = this._makeRecordingStream();
       const root = await navigator.storage.getDirectory();
       this.directory = await root.getDirectoryHandle(OPUS_TEMP_DIRECTORY, { create: true });
       this.fileName = `opus-${Date.now()}-${crypto.randomUUID().slice(0, 12)}.webm`;
       this.fileHandle = await this.directory.getFileHandle(this.fileName, { create: true });
       this.writable = await this.fileHandle.createWritable();
+      if (this.analyser) {
+        let timeout;
+        try {
+          await Promise.race([this.analysisReady, new Promise((_, reject) => {
+            timeout = setTimeout(() => reject(new Error('Timed out starting live silence analysis.')), 2000);
+          })]);
+          if (this.analysisError) throw this.analysisError;
+        } finally { clearTimeout(timeout); }
+      }
 
       this.recorder = new MediaRecorder(this.destination.stream, {
         mimeType: OPUS_MIME_TYPE,
@@ -64,6 +85,7 @@ class OpusRecording {
       this.stopEvent = new Promise((resolve) => {
         this.recorder.addEventListener('stop', () => {
           this.stopTime = performance.now();
+          this._stopAnalysis();
           resolve();
           if (!this.stopRequested) this.onUnexpectedStop?.();
         }, { once: true });
@@ -84,10 +106,18 @@ class OpusRecording {
         this._fail(event.error || new Error('MediaRecorder encoding error.'));
       });
 
+      const startFrame = Math.round(this.context.currentTime * this.context.sampleRate);
       this.recorder.start(OPUS_CHUNK_INTERVAL_MS);
+      this.analyser?.port.postMessage({ type: 'start', startFrame, settings: this.trimSettings });
       this.startTime = performance.now();
       this.progressTimer = setInterval(() => {
-        this.onProgress?.(this.elapsedSeconds());
+        if (this.analyser && !this.analysisError) {
+          // At most one snapshot request can be queued, even if the UI is busy.
+          if (!this.snapshotPending) {
+            this.snapshotPending = true;
+            this.analyser.port.postMessage({ type: 'snapshot' });
+          }
+        } else this.onProgress?.(this.elapsedSeconds());
       }, 500);
       this.onProgress?.(0);
     } catch (error) {
@@ -104,6 +134,7 @@ class OpusRecording {
 
     const destination = ctx.createMediaStreamDestination();
     this.nodes.push(destination);
+    let analysisSource = this.tap;
 
     if (this.recordingFormat === 'opus-stereo') {
       this.tap.connect(destination);
@@ -125,8 +156,48 @@ class OpusRecording {
       destination.channelCount = 1;
       destination.channelCountMode = 'explicit';
       mono.connect(destination);
+      analysisSource = mono;
+    }
+    if (this.autoTrim) {
+      const channels = this.recordingFormat === 'opus-mono' ? 1 : 2;
+      this.analyser = new AudioWorkletNode(ctx, 'silence-detector', {
+        numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
+        channelCount: channels, channelCountMode: 'explicit', channelInterpretation: 'discrete'
+      });
+      this.nodes.push(this.analyser);
+      analysisSource.connect(this.analyser);
+      // Silent output makes the analysis branch run; no extra audible path is added.
+      this.analyser.connect(ctx.destination);
+      this.analysisReady = new Promise(resolve => { this.resolveAnalysisReady = resolve; });
+      this.analyser.port.onmessage = ({ data }) => {
+        if (data.type === 'ready') { this.resolveAnalysisReady(); return; }
+        this.snapshotPending = false;
+        if (data.error) this.analysisError = new Error(data.error);
+        this.boundaries = data;
+        if (data.type === 'snapshot') this.onProgress?.(this.analysisError ? this.elapsedSeconds() : data.savedSeconds);
+        if (data.type === 'stopped') this.resolveAnalysisStop?.();
+      };
+      this.analyser.onprocessorerror = () => {
+        this.analysisError = new Error('Live silence analysis failed.');
+        this.resolveAnalysisReady();
+        this.resolveAnalysisStop?.();
+      };
     }
     return destination;
+  }
+
+  _stopAnalysis() {
+    if (!this.analyser || this.analysisStop) return this.analysisStop;
+    this.analysisStop = new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        this.analysisError = new Error('Timed out finishing live silence analysis.');
+        this.resolveAnalysisStop();
+      }, 2000);
+      this.resolveAnalysisStop = () => { clearTimeout(timeout); resolve(); };
+      this.analyser.port.postMessage({ type: 'stop' });
+      if (this.analysisError) this.resolveAnalysisStop();
+    });
+    return this.analysisStop;
   }
 
   elapsedSeconds() {
@@ -149,11 +220,13 @@ class OpusRecording {
     try {
       if (!this.recorder) throw new Error('Opus recorder was not initialized.');
       if (this.recorder.state !== 'inactive') this.recorder.stop();
+      this._stopAnalysis();
       await Promise.race([
         this.stopEvent,
         new Promise((_, reject) => setTimeout(() => reject(new Error('Timed out stopping Opus recording.')), 10000))
       ]);
       await this.writeChain;
+      await this.analysisStop;
       if (this.writeError) throw this.writeError;
       await this.writable.close();
       this.writable = null;
@@ -167,6 +240,7 @@ class OpusRecording {
       let trimStats = {};
       if (this.autoTrim) {
         try {
+          if (this.analysisError) throw this.analysisError;
           const trimmed = await this._trimFile(file);
           trimStats = trimmed.stats;
           if (!trimmed.unchanged) {
@@ -176,7 +250,7 @@ class OpusRecording {
             await this.directory.removeEntry(originalName).catch((error) => console.warn('Opus source cleanup deferred:', error));
           }
         } catch (error) {
-          // A trim/decoder/quota failure must not destroy a completed recording.
+          // An analysis/trim/quota failure must not destroy a completed recording.
           console.warn('Opus trim skipped; preserving the original recording:', error);
           trimStats.trimWarning = 'Silence trim failed; saved without trimming. / 無音トリムに失敗したため、録音全体を保存しました。';
         }
@@ -227,7 +301,7 @@ class OpusRecording {
         };
         worker.onmessageerror = () => reject(new Error('Opus trim worker response could not be read.'));
         keepAlive();
-        worker.postMessage({ file, directory: this.directory, outputName: name, settings: this.trimSettings });
+        worker.postMessage({ file, directory: this.directory, outputName: name, boundaries: this.boundaries });
       });
       return { ...result, name };
     } catch (error) {
@@ -259,6 +333,12 @@ class OpusRecording {
   }
 
   _releaseGraph() {
+    if (this.analyser) {
+      this.analyser.port.onmessage = null;
+      this.analyser.port.close();
+      this.analyser.onprocessorerror = null;
+      this.analyser = null;
+    }
     if (this.tap) {
       try { this.outputNode.disconnect(this.tap); } catch {}
     }

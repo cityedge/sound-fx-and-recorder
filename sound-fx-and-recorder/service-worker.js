@@ -89,11 +89,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'recording-estimated-duration') {
     const seconds = Math.max(0, Math.floor(Number(message.savedSeconds || 0)));
     const isWav = message.recordingFormat !== 'opus-stereo' && message.recordingFormat !== 'opus-mono';
+    const format = isWav ? 'WAV' : 'Opus';
     void chrome.action.setBadgeText({ text: formatBadge(seconds) });
     void chrome.action.setBadgeBackgroundColor({ color: '#C62828' });
     void chrome.action.setTitle({
       title:
-        `${isWav && message.autoTrim ? 'Estimated WAV / 推定WAV長' : isWav ? 'WAV Recording / 録音中' : 'Opus Recording / 録音中'} ` +
+        `${message.autoTrim ? `Estimated ${format} / 推定${format}長` : `${format} Recording / 録音中`} ` +
         `${formatLong(seconds)}\nSound FX & Recorder`
     });
     return;

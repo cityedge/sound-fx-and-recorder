@@ -86,14 +86,15 @@ Recordings contain the **current monitored signal**. The app never switches BYPA
 - **WAV** retains the existing optional leading/trailing silence trim (`-55 dB` threshold with padding), 16-bit PCM encoding and user-selectable 10-minute auto-stop. WAV continues to buffer PCM in memory; do **not** rely on it for hour-long recordings on low-memory systems.
 - **Opus** uses `MediaRecorder` (`audio/webm;codecs=opus`) and writes 2-second encoded chunks sequentially to browser-private OPFS instead of collecting PCM chunks. There is **no 10-minute limit**. Only the 10-minute-stop checkbox is inactive when Opus is selected.
 - **Auto trim silence** is one shared ON/OFF setting for all three formats. Existing preferences are retained; the default is ON. Only leading/trailing silence is removed, keeping pauses inside the recording and padding before/after audible content. An entirely silent recording is kept intact.
-- With Opus trim ON, a dedicated Worker analyzes small decoded portions after STOP using the same `-55 dB`, 20 ms RMS / 60 ms minimum activity and 250/500 ms padding criteria as WAV. It writes the selected original Opus packets into a new temporary WebM, accounting for decoder preroll and end padding. There is **no re-encoding and no full-length PCM buffer**. Saving takes additional time and temporarily needs space for both compressed files; FX continues throughout. If analysis or trimming fails, the completed original is downloaded without trimming and the popup shows a warning.
+- With trim ON, **all formats display the estimated saved duration** in the icon badge and popup. Leading silence stays at zero. After sound ends, the timer holds once the 500 ms tail padding is filled. If sound resumes, it catches up to include the intervening pause. Recording itself continues throughout silence. With trim OFF, the display counts elapsed recording time. Entirely silent recordings show zero while recording but are saved intact, as with WAV.
+- Opus uses an analysis-only AudioWorklet branch during recording, with the same `-55 dB`, 20 ms RMS / 60 ms minimum activity and 250/500 ms padding criteria as WAV. Only counters and boundary positions are retained during recording; a fixed 250 ms startup buffer bridges notification delays and is then released. Mono analysis follows the mono downmix. After STOP, a Worker uses those same boundaries to write the selected original Opus packets into a new temporary WebM, accounting for decoder preroll and end padding. There is **no whole-recording decoding, no re-encoding and no full-length PCM buffer**. File scanning/writing still takes time and temporarily needs space for both compressed files; FX continues throughout. If analysis, clock validation or trimming fails, the completed original is downloaded without trimming and the popup shows a warning.
 - Once STOP is pressed, the temporary Opus file is finalized and offered via Chrome Downloads. The extension monitors download status and removes the temporary file **after Chrome reports download completion**. Cancelled/interrupted files can remain temporarily in OPFS; old temporary files are pruned after 7 days on a subsequent Opus recording.
 - In Settings, the chosen format is remembered and applies to the **next** recording; changing it mid-recording does not change the current file.
 - For speech recognition, a clean BYPASS recording often works better than a strong surround/reverb setting, but this is entirely under the user's control.
 - WebM/Opus support varies among transcription services. Convert externally if the chosen service does not accept `.webm`.
 - A browser crash or extension reload during recording can cause loss of an incomplete recording. OPFS storage has browser-managed quotas and is not a backup. Save completed recordings via STOP and verify the download.
 
-日本語：録音形式はWAV・Opus Stereo・Opus Monoの3種類です。無音トリムは全形式共通のスイッチでON/OFFでき、保存済みの設定値を引き継ぎます。途中の無音や会話の間は残し、全無音の場合も録音全体を残します。Opusは従来どおり圧縮音声をOPFSへ逐次保存し、トリムON時はSTOP後に少量ずつ解析して、再エンコードせずに前後を切り出します。処理中もFXは継続します。トリムに失敗した場合は、録音全体を保存して警告を表示します。10分自動停止はWAV専用のままで、BYPASSも自動変更しません。
+日本語：録音形式はWAV・Opus Stereo・Opus Monoの3種類です。無音トリムは全形式共通のスイッチでON/OFFでき、保存済みの設定値を引き継ぎます。ON時のアイコン・ポップアップは推定保存時間を表示し、先頭無音では0秒、末尾無音では余白500msの後に表示が止まります。音が再開すると途中の無音も含む時間に追いつき、録音自体は無音でも続きます。OFF時は無音を含む経過時間です。全無音の場合はWAVと同じく、録音中の表示は0秒でも録音全体を保存します。Opusは従来どおり圧縮音声をOPFSへ逐次保存し、録音中に少量の状態だけで無音判定を行います。STOP後は表示と同じ境界で、全体のデコードや再エンコードをせずに切り出します。処理中もFXは継続します。判定・時刻の整合性確認・トリムに失敗した場合は、録音全体を保存して警告を表示します。10分自動停止はWAV専用のままで、BYPASSも自動変更しません。
 
 ## External converter / 外部変換ツール
 
@@ -157,7 +158,7 @@ pwsh -File scripts/package.ps1
 
 The script reads the version from `sound-fx-and-recorder/manifest.json` and writes `output/releases/sound-fx-and-recorder-v<version>.zip`. It packages an explicit list of runtime files, the converter and user documentation. Handoff notes, development scripts and previous ZIPs are not included. Runtime files are copied unchanged.
 
-日本語：配布ZIPは上記コマンドで生成します。引き継ぎ書・開発用ファイルは配布対象に含めません。2026-11-12のOpus無音トリム追加は、ユーザー指定によりバージョン番号を1.2.0のまま更新しています。
+日本語：配布ZIPは上記コマンドで生成します。引き継ぎ書・開発用ファイルは配布対象に含めません。2026-11-12のOpus無音トリム追加と2026-11-13の録音中時間表示の統一は、ユーザー指定によりバージョン番号を1.2.0のまま更新しています。
 
 ## License
 

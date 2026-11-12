@@ -20,6 +20,7 @@ $extensionFiles = @(
     'offscreen.js'
     'opus-recorder.js'
     'opus-trim-worker.js'
+    'silence-detector-worklet.js'
     'webm-opus.js'
     'pcm-recorder-worklet.js'
     'pcm-utils.js'

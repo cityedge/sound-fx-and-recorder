@@ -836,11 +836,11 @@ function maybeSendDisplayedDuration(force) {
   notifyStateChanged();
 }
 
-// This timer is driven by elapsed wall time, not by an uncompressed PCM
-// buffer. No WAV auto-trim or 10-minute limit is applied to Opus formats.
+// Trim ON uses the live worklet's estimated saved duration, just like WAV.
+// Trim OFF uses elapsed time. Neither path accumulates PCM or applies a time limit.
 function updateOpusDuration(seconds) {
   if (recordingSettings.recordingFormat === 'wav') return;
-  if (!['recording', 'processing'].includes(recordingStatus)) return;
+  if (recordingStatus !== 'recording') return;
   const savedSeconds = Math.max(0, Math.floor(seconds));
   if (savedSeconds === lastDisplayedSavedSecond) return;
   lastDisplayedSavedSecond = savedSeconds;
@@ -849,7 +849,7 @@ function updateOpusDuration(seconds) {
     target: 'service-worker',
     type: 'recording-estimated-duration',
     savedSeconds,
-    autoTrim: false,
+    autoTrim: recordingSettings.autoTrim,
     recordingFormat: recordingSettings.recordingFormat
   }).catch(() => {});
   notifyStateChanged();

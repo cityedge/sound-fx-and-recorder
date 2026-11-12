@@ -2,6 +2,13 @@
 
 All notable public changes to **Sound FX & Recorder** are documented here.
 
+## [1.2.0] live trim duration update - 2026-11-13
+
+- Matched Opus's icon badge and popup timer to WAV when silence trim is ON: exclude leading silence, hold after trailing padding, and include internal pauses when sound resumes. Silence never stops the recording. Trim OFF keeps the elapsed-time display.
+- Replaced post-STOP Opus decoding/analysis with a bounded-state AudioWorklet on an analysis-only branch. Mono analysis observes the mono downmix. The same live boundaries drive both the displayed estimate and final WebM trimming.
+- Reused lossless packet remuxing and incremental OPFS recording. Invalid analysis or inconsistent audio clocks preserve the completed original with a warning.
+- Preserved the DSP/monitor paths, WAV recording, WAV-only 10-minute limit, preference storage and FX playback after STOP. Manifest version remains 1.2.0.
+
 ## [1.2.0] in-place update - 2026-11-12
 
 - Enabled the existing shared silence-trim switch for Opus Stereo and Opus Mono as well as WAV. The 10-minute auto-stop remains WAV-only.

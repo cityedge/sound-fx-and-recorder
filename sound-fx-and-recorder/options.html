@@ -94,7 +94,7 @@
         <input id="autoTrim" type="checkbox">
         <span><strong>Auto trim leading/trailing silence</strong><small>前後の無音部を自動トリム（全形式共通）</small></span>
       </label>
-      <p class="note">Silence trim applies to WAV and both Opus formats. Pauses inside the recording are kept. Opus is analyzed after STOP and trimmed without re-encoding; FX continues during saving. If trimming fails, the original recording is saved with a warning.<br>無音トリムはWAV・Opus共通です。録音途中の無音は残します。OpusはSTOP後に解析し、再エンコードせずに前後を切り出します。保存中もFXは継続し、トリム失敗時は警告を表示して録音全体を保存します。</p>
+      <p class="note">With silence trim ON, all formats display the estimated saved duration: leading silence is excluded, the timer holds during trailing silence, and catches up if sound resumes. Pauses inside the recording are kept. Opus is trimmed without re-encoding; FX continues during saving. If trimming fails, the original recording is saved with a warning.<br>トリムON時は全形式で推定保存時間を表示します。先頭の無音は数えず、末尾の無音で表示が止まり、音が再開すると途中の無音も含む時間に追いつきます。Opusは再エンコードせずに切り出します。保存中もFXは継続し、トリム失敗時は警告を表示して録音全体を保存します。</p>
       <label class="check-row" id="autoStopRow">
         <input id="autoStop10Min" type="checkbox">
         <span><strong>Auto stop after 10 minutes (WAV only)</strong><small>10分で自動停止（WAVのみ）</small></span>

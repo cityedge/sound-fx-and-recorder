@@ -13,10 +13,21 @@ fs.cpSync(path.join(root, 'sound-fx-and-recorder'), extension, { recursive: true
 fs.appendFileSync(path.join(extension, 'offscreen.html'), '<script src="qa-engine.js"></script>\n', 'utf8');
 fs.writeFileSync(path.join(extension, 'qa.html'), '<!doctype html><title>Sound FX recording QA</title><p>Recording QA</p><input id="fixture" type="file">', 'utf8');
 fs.writeFileSync(path.join(extension, 'qa-engine.js'), `
-let qaContext, qaGain, qaAnalyser;
+let qaContext, qaGain, qaAnalyser, qaPolarity, qaStartDelay=0;
+const NativeAudioContext=AudioContext;
+globalThis.AudioContext=class extends NativeAudioContext { constructor(options={}) { super({...options,sampleRate:${Number(process.env.SAMPLE_RATE || 48000)}}); } };
 const qaWarnings=[]; const qaWarn=console.warn;
 console.warn=(...args)=>{qaWarnings.push(args.map(x=>x?.message||String(x)).join(' '));qaWarn(...args);};
 const qaTrim = OpusRecording.prototype._trimFile;
+const qaStream = OpusRecording.prototype._makeRecordingStream;
+OpusRecording.prototype._makeRecordingStream = function() {
+  const stream=qaStream.call(this);
+  if(this.analyser&&qaStartDelay){
+    const post=this.analyser.port.postMessage.bind(this.analyser.port);
+    this.analyser.port.postMessage=data=>data.type==='start'?setTimeout(()=>post(data),qaStartDelay):post(data);
+  }
+  return stream;
+};
 OpusRecording.prototype._trimFile = async function(file) {
   const handle=await this.directory.getFileHandle('qa-original.webm',{create:true});
   const writer=await handle.createWritable(); await writer.write(file); await writer.close();
@@ -28,8 +39,9 @@ navigator.mediaDevices.getUserMedia = async () => {
   qaGain = qaContext.createGain(); qaGain.gain.value = 0;
   const merger = qaContext.createChannelMerger(2);
   for (let i=0;i<2;i++) {
-    const osc = qaContext.createOscillator(); osc.frequency.value = i ? 880 : 440;
-    osc.connect(merger,0,i); osc.start();
+    const osc = qaContext.createOscillator(); osc.frequency.value = 440;
+    const gain=qaContext.createGain(); if(i)qaPolarity=gain;
+    osc.connect(gain); gain.connect(merger,0,i); osc.start();
   }
   merger.connect(qaGain); qaGain.connect(dest); await qaContext.resume();
   return dest.stream;
@@ -41,15 +53,25 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     qaGain.gain.cancelScheduledValues(now); qaGain.gain.setValueAtTime(0,now);
     for (const [time,gain] of message.steps) qaGain.gain.setValueAtTime(gain,now+time);
     reply({ ok:true });
+  } else if (message.type === 'polarity') {
+    qaPolarity.gain.value=message.value; reply({ok:true});
+  } else if (message.type === 'delay-start') {
+    qaStartDelay=message.ms; reply({ok:true});
   } else if (message.type === 'inspect') {
     if (!qaAnalyser && recorderNode) { qaAnalyser=audioContext.createAnalyser(); recorderNode.connect(qaAnalyser); }
     const samples = new Float32Array(2048); if(qaAnalyser) qaAnalyser.getFloatTimeDomainData(samples);
     reply({ ...getPublicState(), pcmChunks:pcmChunks.length, context:audioContext?.state,
+      boundaries:activeOpusRecording?.boundaries, analysisError:activeOpusRecording?.analysisError?.message,
+      hasAnalyser:!!activeOpusRecording?.analyser,
       peak:Math.max(...samples.map(Math.abs)), pending:pendingOpusDownloads.size, warnings:qaWarnings });
   } else if (message.type === 'close') {
     qaContext?.close(); qaAnalyser=null; reply({ok:true});
   } else if (message.type === 'force-trim-failure') {
     activeOpusRecording._trimFile = function(){return qaTrim.call(this,new File([new Uint8Array([0])],'invalid-test.webm'));}; reply({ok:true});
+  } else if (message.type === 'force-analysis-failure') {
+    activeOpusRecording.analyser.onprocessorerror(); reply({ok:true});
+  } else if (message.type === 'force-clock-mismatch') {
+    activeOpusRecording._trimFile=function(file){this.boundaries.capturedSeconds+=10;return qaTrim.call(this,file);}; reply({ok:true});
   }
 });
 `, 'utf8');
@@ -82,21 +104,56 @@ async function poll(fn, timeout = 30000) {
     await poll(async()=> (await page.evaluate(()=>chrome.runtime.getContexts({contextTypes:['OFFSCREEN_DOCUMENT']}))).length);
     const fx = { mode:'wide', effectAmount:50, bassLevel:0, trebleLevel:0, bypass:true };
     assert.equal((await send('offscreen','start-fx',{data:{streamId:'qa',tabTitle:'QA',fx}})).ok,true);
+    const livePopup=await context.newPage();
+    livePopup.on('pageerror',error=>errors.push(error.message));
+    await livePopup.goto('chrome-extension://'+id+'/popup.html');
+    assert.match(await livePopup.title(),/Sound FX/);
+    await livePopup.locator('#displayMode').getByText('BYPASS',{exact:true}).waitFor();
 
     const results = [];
     const cases = process.env.ONLY_STRESS ? [] : process.env.QUICK ? [['opus-stereo',true]] : [
       ['opus-stereo',true], ['opus-stereo',false], ['opus-mono',true], ['opus-mono',false],
-      ['opus-mono',true,'silence'], ['opus-stereo',true,'short'], ['wav',true]
+      ['opus-mono',true,'silence'], ['opus-stereo',true,'short'], ['opus-mono',true,'cancel'],
+      ['opus-stereo',true,'delayed'], ['wav',true]
     ];
     for (const [format, trim, special] of cases) {
       const before = await page.evaluate(async()=> (await chrome.downloads.search({})).map(d=>d.id));
+      await send('qa','delay-start',{ms:special==='delayed'?100:0});
       assert.equal((await send('offscreen','start-recording',{settings:{recordingFormat:format,autoTrim:trim,autoStop10Min:true,useTabTitle:true}})).ok,true);
+      await send('qa','polarity',{value:special==='cancel'?-1:1});
       const steps = special==='silence' ? [] : special==='short' ? [[0.4,0.1],[0.42,0]]
+        : special==='cancel' ? [[0,0.1]]
+        : special==='delayed' ? [[0,0.1],[0.12,0],[0.9,0.1],[1.02,0]]
         : [[1.5,0.15],[2.5,0],[3.5,0.15],[4.5,0]];
       await send('qa','signal',{steps});
-      await delay(special ? 1300 : 6200);
+      const timeline = [];
+      const began = Date.now();
+      while (Date.now() - began < (special ? 1300 : 6200)) {
+        await delay(200);
+        const state = await send('qa','inspect');
+        const badge = await page.evaluate(async()=>({text:await chrome.action.getBadgeText({}),title:await chrome.action.getTitle({})}));
+        const popupTime=await livePopup.locator('#recordTime').textContent();
+        timeline.push({at:(Date.now()-began)/1000,seconds:state.savedSeconds,badge,popupTime,analysisError:state.analysisError});
+      }
       const during = await send('qa','inspect');
       if(format!=='wav') assert.equal(during.pcmChunks,0);
+      if(format!=='wav') assert.equal(during.hasAnalyser,trim);
+      assert.equal(during.analysisError,undefined,JSON.stringify(during));
+      if(trim) {
+        if(special==='delayed') {
+          assert.equal(during.boundaries.foundAudio,true);
+          assert.equal(during.boundaries.start,0,'100 ms start-message delay must not lose the initial short sound');
+        } else assert.ok(timeline.filter(t=>t.at<1.3).every(t=>t.seconds===0),'leading silence stays at zero');
+        if(!special) {
+          assert.ok(timeline.some(t=>t.at>3.1&&t.at<3.5&&t.seconds===1),'timer holds at the end of first sound');
+          assert.ok(timeline.some(t=>t.at>4.1&&t.seconds>=2),'resumed sound includes the internal pause');
+          assert.ok(timeline.filter(t=>t.at>5.3).every(t=>t.seconds===3),'trailing silence holds at saved length');
+          assert.match(timeline.at(-1).badge.title,new RegExp('Estimated '+(format==='wav'?'WAV':'Opus')));
+          assert.equal(timeline.at(-1).badge.text,'0:03');
+          assert.equal(timeline.at(-1).popupTime,'00:03');
+          if(format==='opus-stereo') await livePopup.locator('.gadget').screenshot({path:path.join(tmp,'popup-live-silence.png')});
+        }
+      } else assert.ok(during.savedSeconds>=5,'trim OFF keeps elapsed time including silence');
       const stop = await send('offscreen','stop-recording');
       assert.equal(stop.ok,true,JSON.stringify(stop));
       assert.equal(stop.state.active,true);
@@ -113,6 +170,18 @@ async function poll(fn, timeout = 30000) {
       assert.equal(probe.streams[0].channels,format==='opus-mono'?1:2);
       const pcm = execFileSync('ffmpeg',['-v','error','-i',named,'-f','f32le','-ar','48000','-ac','2','pipe:1'],{maxBuffer:15*1024*1024});
       const seconds = pcm.length / (48000*2*4);
+      if(trim&&!special) assert.equal(during.savedSeconds,Math.floor(seconds),'live estimate agrees with saved duration');
+      if(trim&&!special) {
+        const samples = new Float32Array(pcm.buffer,pcm.byteOffset,pcm.length/4);
+        let first=-1,last=-1;
+        for(let block=0;block<samples.length;block+=960) {
+          let power=0; const end=Math.min(samples.length,block+960);
+          for(let i=block;i<end;i++)power+=samples[i]*samples[i];
+          if(Math.sqrt(power/(end-block))>10**(-55/20)){if(first<0)first=block/96000;last=end/96000;}
+        }
+        assert.ok(first>.14&&first<.36,'leading audio padding '+first);
+        assert.ok(seconds-last>.38&&seconds-last<.62,'trailing audio padding '+(seconds-last));
+      }
       if(!special) assert.ok(trim ? seconds>3.7 && seconds<4.0 : seconds>6.0 && seconds<6.5, 'duration '+seconds);
       else assert.ok(seconds>1.0 && seconds<1.6, 'all-silent / short event should stay intact: '+seconds);
       if(trim && format!=='wav') {
@@ -138,6 +207,7 @@ async function poll(fn, timeout = 30000) {
       });
       assert.ok(Math.abs(browserDuration-seconds)<0.025,'Chrome and FFmpeg decode the same trimmed duration');
       await send('qa','signal',{steps:[[0,0.1]]});
+      await send('qa','polarity',{value:1});
       await delay(150);
       const after = await send('qa','inspect');
       assert.equal(after.active,true); assert.equal(after.context,'running');
@@ -145,21 +215,21 @@ async function poll(fn, timeout = 30000) {
       assert.ok(after.peak>0.05,'monitor continues');
       await send('qa','signal',{steps:[]});
       if(format!=='wav') await poll(async()=> (await send('qa','inspect')).pending===0);
-      results.push({format,trim,special,seconds,browserDuration,channels:probe.streams[0].channels,stats:stop.state});
+      results.push({format,trim,special,seconds,browserDuration,channels:probe.streams[0].channels,timeline,boundaries:during.boundaries,stats:stop.state});
       console.log('PASS',format,trim,special||'',seconds.toFixed(3));
     }
 
     // An injected trim failure still downloads the completed original and exposes a warning.
-    if(!process.env.QUICK) {
+    if(!process.env.QUICK) for (const failure of ['force-trim-failure','force-analysis-failure','force-clock-mismatch']) {
       const before=await page.evaluate(async()=>(await chrome.downloads.search({})).map(d=>d.id));
       await send('offscreen','start-recording',{settings:{recordingFormat:'opus-stereo',autoTrim:true}});
-      await send('qa','force-trim-failure'); await send('qa','signal',{steps:[[0,0.1]]});
+      await send('qa',failure); await send('qa','signal',{steps:[[0,0.1]]});
       await delay(400);
       const result=await send('offscreen','stop-recording');
       assert.equal(result.ok,true);assert.match(result.state.recordingWarning,/saved without trimming/);
       await poll(async()=> (await page.evaluate(()=>chrome.downloads.search({}))).some(d=>!before.includes(d.id)&&d.state==='complete'));
       await send('qa','signal',{steps:[]});
-      console.log('PASS trim failure preserves original / warning / final short chunk');
+      console.log('PASS',failure,'preserves original / warning / final short chunk');
     }
 
     if(process.env.STRESS_FILE) {
@@ -202,7 +272,7 @@ async function poll(fn, timeout = 30000) {
               resolve({stats:data.stats,downloadId:download.downloadId});
             }
           };
-          worker.postMessage({file,directory,outputName:'qa-stress-trim.webm',settings:{thresholdDb:-55,analysisBlockMs:20,minimumActiveMs:60,leadingPaddingMs:250,trailingPaddingMs:500}});
+          worker.postMessage({file,directory,outputName:'qa-stress-trim.webm',boundaries:{start:1.75,end:3598.5,foundAudio:true,capturedSeconds:3600}});
         });
       }); } finally {clearInterval(monitor);}
       const downloaded=await poll(async()=> {const d=(await page.evaluate(id=>chrome.downloads.search({id}),result.downloadId))[0];return d?.state==='complete'?d:null;});
@@ -214,6 +284,7 @@ async function poll(fn, timeout = 30000) {
     }
 
     // Real extension settings and popup, with real storage and offscreen state.
+    await livePopup.close();
     const options = await context.newPage();
     options.on('pageerror',(error)=>errors.push(error.message));
     await options.goto('chrome-extension://'+id+'/options.html');
@@ -266,8 +337,18 @@ async function poll(fn, timeout = 30000) {
     console.log('PASS live BYPASS / FX and EQ memory / recording setting snapshot / FX continuity');
     await popup.screenshot({path:path.join(tmp,'popup-after-recording.png')});
     assert.deepEqual(errors,[]);
-    await send('offscreen','stop-fx'); await send('qa','close');
-    fs.writeFileSync(path.join(tmp,'results.json'),JSON.stringify({browser:context.browser().version(),results,errors},null,2),'utf8');
+    const beforePowerOff=await page.evaluate(async()=>(await chrome.downloads.search({})).map(d=>d.id));
+    assert.equal((await send('offscreen','start-recording',{settings:{recordingFormat:'opus-mono',autoTrim:true}})).ok,true);
+    await delay(450);
+    const poweredOff=await send('offscreen','stop-fx');
+    assert.equal(poweredOff.ok,true);assert.equal(poweredOff.state.active,false);
+    assert.equal(poweredOff.state.recordingWarning,'');
+    await poll(async()=> (await page.evaluate(()=>chrome.downloads.search({}))).some(d=>!beforePowerOff.includes(d.id)&&d.state==='complete'));
+    console.log('PASS POWER OFF finalizes active Opus recording');
+    await send('qa','close');
+    const report=JSON.stringify({browser:context.browser().version(),sampleRate:Number(process.env.SAMPLE_RATE||48000),results,errors},null,2);
+    fs.writeFileSync(path.join(tmp,'results.json'),report,'utf8');
+    fs.writeFileSync(path.join(tmp,process.env.ONLY_STRESS?'results-stress.json':'results-'+(process.env.SAMPLE_RATE||48000)+'.json'),report,'utf8');
     console.log('PASS settings shared switch / WAV-only stop / popup / console');
   } finally { await context.close(); }
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -437,7 +437,7 @@ function render() {
   } else if (processing) {
     ui.statusText.textContent = engineState.recordingFormat === 'wav'
       ? 'Saving WAV; FX continues. / WAV保存中。FXは継続します。'
-      : 'Preparing WebM/Opus; FX continues. / Opusの解析・保存中。FXは継続します。';
+      : 'Saving WebM/Opus; FX continues. / Opus保存中。FXは継続します。';
   } else if (recording) {
     const formatLabel = engineState.recordingFormat === 'wav' ? 'WAV' : 'Opus';
     ui.statusText.textContent = engineState.bypass
